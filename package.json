@@ -11,11 +11,12 @@
     "test": "vitest run",
     "check": "npm run test && npm run build",
     "dist": "npm run build && electron-builder --config electron-builder.config.cjs --win nsis",
-    "dist:portable": "npm run build && electron-builder --config electron-builder.config.cjs --win portable --publish never"
+    "dist:portable": "npm run build && electron-builder --config electron-builder.config.cjs --win portable --publish never --config.electronDist=./node_modules/electron/dist"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.6",
     "@fontsource/manrope": "^5.2.6",
+    "@terrastruct/d2": "^0.1.33",
     "lucide-react": "^0.468.0",
     "openai": "^6.7.0",
     "react": "^19.1.1",

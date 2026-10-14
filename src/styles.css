@@ -192,6 +192,13 @@ kbd {
 .answer-copy p:last-child { margin-bottom: 0; }
 .answer-error .answer-copy { color: #ffd0c9; }
 
+.d2-diagram-card { max-width: 100%; margin: 12px 0 16px; padding: 10px; overflow: hidden; border: 1px solid rgba(255,255,255,.12); border-radius: 12px; background: rgba(255,255,255,.94); }
+.d2-diagram-image { display: block; width: 100%; max-height: min(62vh, 620px); object-fit: contain; }
+.d2-diagram-loading, .d2-diagram-error { margin: 0 !important; color: #27313a; font-size: 13px; }
+.d2-diagram-error details { margin-top: 8px; }
+.d2-diagram-error summary { cursor: pointer; }
+.d2-diagram-error pre { max-height: 260px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+
 .thinking-line {
   display: block;
   width: 45%;

@@ -18,12 +18,13 @@ import {
   Sparkles,
   X,
 } from 'lucide-react';
-import { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef, useState } from 'react';
 import type { AssistantProfile, Attachment, MemoryContext, ShortcutAction, StreamEvent } from '../../electron/contracts';
 import { errorMessage } from '../lib/errors';
 import { KeyHint } from './KeyHint';
 import { MeetingPanel } from './MeetingPanel';
 import { ContextPanel } from './ContextPanel';
+import { AnswerContent } from './AnswerContent';
 import { useDragPosition } from '../lib/useDragPosition';
 
 type AnswerState =
@@ -215,8 +216,6 @@ export function Overlay() {
     });
   }, [openCapture, openPrompt, prompt, promptOpen, submit]);
 
-  const paragraphs = useMemo(() => answer.text.split(/\n{2,}/).filter(Boolean), [answer.text]);
-
   const changeOpacity = async (value: number) => {
     const saved = await window.persona.setOpacity(value);
     setSettings((current) => ({ ...current, opacity: saved.opacity }));
@@ -336,7 +335,7 @@ export function Overlay() {
 
           <div className="answer-copy" style={{ fontSize: `${answerFontSize}px` }}>
             {answer.status === 'loading' && <span className="thinking-line" aria-hidden="true" />}
-            {paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+            <AnswerContent text={answer.text} />
           </div>
 
           <footer className="answer-footer">
