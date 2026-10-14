@@ -1,0 +1,141 @@
+export type PublicSettings = {
+  hasApiKey: boolean;
+  model: string;
+  transcriptionModel: string;
+  opacity: number;
+  contentProtection: boolean;
+  historyEnabled: boolean;
+  shortcuts: Record<ShortcutAction, string>;
+  layoutPosition: 'center' | 'upper-right' | 'lower-center';
+  scale: number;
+  modelPolicy: ModelPolicy;
+  policyModels: Record<ModelPolicy, string>;
+  maxOutputTokens: number;
+};
+
+export type SaveSettingsInput = {
+  apiKey?: string;
+  model: string;
+  transcriptionModel?: string;
+  contentProtection: boolean;
+  historyEnabled?: boolean;
+  shortcuts?: Partial<Record<ShortcutAction, string>>;
+  layoutPosition?: PublicSettings['layoutPosition'];
+  scale?: number;
+  modelPolicy?: ModelPolicy;
+  policyModels?: Partial<Record<ModelPolicy, string>>;
+  maxOutputTokens?: number;
+};
+
+export type ModelPolicy = 'economy' | 'balanced' | 'quality';
+export type ProfileModelPolicy = ModelPolicy | 'default';
+
+export type AssistantProfile = {
+  id: string;
+  name: string;
+  instructions: string;
+  knowledgeFiles?: Attachment[];
+  modelPolicy: ProfileModelPolicy;
+  builtIn: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SaveAssistantProfileInput = {
+  id?: string;
+  name: string;
+  instructions: string;
+  knowledgeFiles?: Attachment[];
+  modelPolicy: ProfileModelPolicy;
+};
+
+export type Attachment = {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  dataBase64: string;
+};
+
+export type MemoryContext = {
+  id: string;
+  prompt: string;
+  answer: string;
+  createdAt: string;
+};
+
+export type CaptureSource = {
+  id: string;
+  name: string;
+  dataUrl: string;
+  kind: 'screen' | 'window';
+};
+
+export type OverlayAudioSource = Pick<CaptureSource, 'id' | 'name'>;
+
+export type AskInput = {
+  prompt: string;
+  imageDataUrl?: string;
+  profileId?: string;
+  attachments?: Attachment[];
+  contextEntries?: MemoryContext[];
+};
+
+export type AskResult = {
+  text: string;
+  requestId?: string;
+};
+
+export type StreamEvent =
+  | { type: 'delta'; text: string }
+  | { type: 'done'; requestId?: string }
+  | { type: 'error'; message: string }
+  | { type: 'cancelled' };
+
+export type HistoryEntry = {
+  id: string;
+  createdAt: string;
+  prompt: string;
+  answer: string;
+  hasImage: boolean;
+  profileId?: string;
+  attachmentNames?: string[];
+};
+
+export type Diagnostics = {
+  platform: string;
+  windowsOnly: boolean;
+  contentProtection: boolean;
+  alwaysOnTop: boolean;
+  message: string;
+};
+
+export type AudioSource = 'microphone' | 'computer' | 'mixed';
+
+export type TranscribeInput = {
+  audio: Uint8Array;
+  mimeType: string;
+  source: AudioSource;
+};
+
+export type TranscriptSegment = {
+  id: string;
+  createdAt: string;
+  source: AudioSource;
+  text: string;
+};
+
+export type MeetingSummaryInput = {
+  transcript: string;
+};
+
+export type ShortcutAction =
+  | 'ask'
+  | 'capture'
+  | 'meeting'
+  | 'toggle-overlay'
+  | 'toggle-dock'
+  | 'toggle-always-on-top'
+  | 'opacity-up'
+  | 'opacity-down'
+  | 'toggle-interaction';

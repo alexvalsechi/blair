@@ -1,0 +1,55 @@
+import type {
+  AskInput,
+  AskResult,
+  CaptureSource,
+  OverlayAudioSource,
+  PublicSettings,
+  SaveSettingsInput,
+  ShortcutAction,
+  StreamEvent, HistoryEntry, Diagnostics, MeetingSummaryInput, TranscribeInput, AssistantProfile, SaveAssistantProfileInput, Attachment,
+} from '../electron/contracts';
+
+declare global {
+  interface Window {
+    persona: {
+      getSettings(): Promise<PublicSettings>;
+      saveSettings(input: SaveSettingsInput): Promise<PublicSettings>;
+      testConnection(): Promise<AskResult>;
+      listModels(): Promise<string[]>;
+      listTranscriptionModels(): Promise<string[]>;
+      openSettings(): Promise<void>;
+      closeSettings(): Promise<void>;
+      listCaptureSources(): Promise<CaptureSource[]>;
+      getOverlayAudioSource(): Promise<OverlayAudioSource | null>;
+      captureOverlayScreen(): Promise<CaptureSource | null>;
+      ask(input: AskInput): Promise<AskResult>;
+      askStream(input: AskInput): void;
+      cancelAsk(): void;
+      onStream(callback: (event: StreamEvent) => void): () => void;
+      listHistory(): Promise<HistoryEntry[]>;
+      clearHistory(): Promise<void>;
+      searchMemory(query: string): Promise<HistoryEntry[]>;
+      deleteMemory(id: string): Promise<void>;
+      exportMemory(format: 'json' | 'markdown'): Promise<boolean>;
+      listProfiles(): Promise<AssistantProfile[]>;
+      saveProfile(input: SaveAssistantProfileInput): Promise<AssistantProfile>;
+      deleteProfile(id: string): Promise<void>;
+      selectAttachments(): Promise<Attachment[]>;
+      selectAssistantDocuments(): Promise<Attachment[]>;
+      diagnostics(): Promise<Diagnostics>;
+      transcribeAudio(input: TranscribeInput): Promise<string>;
+      summarizeMeeting(input: MeetingSummaryInput): Promise<AskResult>;
+      setOpacity(value: number): Promise<PublicSettings>;
+      setClickThrough(enabled: boolean): void;
+      hideOverlay(): void;
+      showOverlay(): void;
+      setInteractiveRegions(regions: Array<{ x: number; y: number; width: number; height: number }>): void;
+      beginOverlayDrag(): void;
+      endOverlayDrag(): void;
+      quitApp(): void;
+      onShortcut(callback: (action: ShortcutAction) => void): () => void;
+    };
+  }
+}
+
+export {};
