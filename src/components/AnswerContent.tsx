@@ -2,6 +2,10 @@ import { useEffect, useState } from 'react';
 
 type AnswerPart = { type: 'text'; value: string } | { type: 'd2'; value: string };
 
+export function svgToDataUrl(svg: string): string {
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
 let sharedRenderer: Promise<import('@terrastruct/d2').D2> | null = null;
 
 function getRenderer() {
@@ -31,7 +35,6 @@ function D2Diagram({ source }: { source: string }) {
 
   useEffect(() => {
     let active = true;
-    let objectUrl = '';
     setImageUrl('');
     setError('');
 
@@ -51,8 +54,7 @@ function D2Diagram({ source }: { source: string }) {
           noXMLTag: true,
         });
         if (!active) return;
-        objectUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
-        setImageUrl(objectUrl);
+        setImageUrl(svgToDataUrl(svg));
       } catch (cause) {
         if (active) setError(cause instanceof Error ? cause.message : 'Erro desconhecido ao renderizar o diagrama.');
       }
@@ -60,14 +62,21 @@ function D2Diagram({ source }: { source: string }) {
 
     return () => {
       active = false;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [source]);
 
   return (
     <div className="d2-diagram-card">
       {imageUrl ? (
-        <img className="d2-diagram-image" src={imageUrl} alt="Diagrama D2 em modo esboço" />
+        <img
+          className="d2-diagram-image"
+          src={imageUrl}
+          alt="Diagrama D2 em modo esboço"
+          onError={() => {
+            setImageUrl('');
+            setError('O navegador não conseguiu carregar o SVG gerado.');
+          }}
+        />
       ) : error ? (
         <div className="d2-diagram-error" role="status">
           <p>Não foi possível renderizar o diagrama D2: {error}</p>
