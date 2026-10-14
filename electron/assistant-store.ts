@@ -2,7 +2,7 @@ import { app } from 'electron';
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { AssistantProfile, SaveAssistantProfileInput } from './contracts.js';
+import { MAX_INSTRUCTIONS_LENGTH, type AssistantProfile, type SaveAssistantProfileInput } from './contracts.js';
 import { normalizeModelPolicy } from './validation.js';
 
 const now = () => new Date().toISOString();
@@ -36,7 +36,7 @@ export async function saveProfile(input: SaveAssistantProfileInput): Promise<Ass
   const name = input.name.trim();
   const instructions = input.instructions.trim();
   if (name.length < 2 || name.length > 60) throw new Error('O nome do assistente deve ter entre 2 e 60 caracteres.');
-  if (instructions.length < 10 || instructions.length > 4_000) throw new Error('As instruções devem ter entre 10 e 4.000 caracteres.');
+  if (instructions.length < 10 || instructions.length > MAX_INSTRUCTIONS_LENGTH) throw new Error(`As instruções devem ter entre 10 e ${MAX_INSTRUCTIONS_LENGTH.toLocaleString('pt-BR')} caracteres.`);
   const knowledgeFiles = input.knowledgeFiles ?? [];
   if (knowledgeFiles.length > 5) throw new Error('Anexe no máximo 5 documentos por agente.');
   let totalDocumentSize = 0;

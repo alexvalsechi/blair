@@ -29,6 +29,7 @@ export type SaveSettingsInput = {
 
 export type ModelPolicy = 'economy' | 'balanced' | 'quality';
 export type ProfileModelPolicy = ModelPolicy | 'default';
+export const MAX_INSTRUCTIONS_LENGTH = 100_000;
 
 export type AssistantProfile = {
   id: string;

@@ -1,5 +1,6 @@
 import { Bot, Check, Download, Edit3, FileJson, GripVertical, History, Plus, Search, Trash2, X } from 'lucide-react';
 import { FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { MAX_INSTRUCTIONS_LENGTH } from '../../electron/contracts';
 import type { AssistantProfile, HistoryEntry, MemoryContext, ProfileModelPolicy, SaveAssistantProfileInput } from '../../electron/contracts';
 import { errorMessage } from '../lib/errors';
 import { useDragPosition } from '../lib/useDragPosition';
@@ -145,7 +146,7 @@ export function ContextPanel(props: Props) {
                 <form onSubmit={(event) => void submitProfile(event)}>
                   <div className="profile-form-heading"><h3>{draft.id ? 'Editar assistente' : 'Novo assistente'}</h3><button className="icon-button" type="button" aria-label="Cancelar edição" onClick={() => setEditing(false)}><X size={16} /></button></div>
                   <label>Nome<input value={draft.name} maxLength={60} onChange={(event) => setDraft((value) => ({ ...value, name: event.target.value }))} placeholder="Ex.: Revisor técnico" required /></label>
-                  <label>Instruções<textarea value={draft.instructions} maxLength={4000} onChange={(event) => setDraft((value) => ({ ...value, instructions: event.target.value }))} placeholder="Como este assistente deve analisar e responder?" required /></label>
+                  <label>Instruções<textarea value={draft.instructions} maxLength={MAX_INSTRUCTIONS_LENGTH} onChange={(event) => setDraft((value) => ({ ...value, instructions: event.target.value }))} placeholder="Como este assistente deve analisar e responder?" required /><small className="field-help">{draft.instructions.length.toLocaleString('pt-BR')} / {MAX_INSTRUCTIONS_LENGTH.toLocaleString('pt-BR')} caracteres</small></label>
                   <label>Política de modelo<select value={draft.modelPolicy} onChange={(event) => setDraft((value) => ({ ...value, modelPolicy: event.target.value as ProfileModelPolicy }))}>{Object.entries(policyLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
                   <button className="meeting-primary" type="submit" disabled={busy}>{busy ? 'Salvando…' : 'Salvar assistente'}</button>
                 </form>
