@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="tile" x1="64" y1="40" x2="450" y2="480" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#172B43"/>
+      <stop offset="1" stop-color="#0B1422"/>
+    </linearGradient>
+    <linearGradient id="folder" x1="100" y1="142" x2="418" y2="395" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#62D7FF"/>
+      <stop offset="1" stop-color="#2584F4"/>
+    </linearGradient>
+    <linearGradient id="tab" x1="120" y1="112" x2="267" y2="184" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#B5F1FF"/>
+      <stop offset="1" stop-color="#50BFFF"/>
+    </linearGradient>
+  </defs>
+  <rect x="20" y="20" width="472" height="472" rx="112" fill="url(#tile)"/>
+  <path d="M91 180c0-18 15-33 33-33h94l38 37h132c18 0 33 15 33 33v137c0 20-16 36-36 36H127c-20 0-36-16-36-36V180Z" fill="url(#folder)"/>
+  <path d="M91 205c0-18 15-33 33-33h94l31 31h172c20 0 36 16 36 36v112c0 22-18 40-40 40H131c-22 0-40-18-40-40V205Z" fill="#2584F4" fill-opacity=".48"/>
+  <path d="M109 218c0-15 12-27 27-27h289c17 0 30 15 27 32l-23 129c-3 16-17 27-33 27H137c-17 0-30-13-30-30V218Z" fill="url(#folder)"/>
+  <path d="m319 236 10 27 27 10-27 10-10 27-10-27-27-10 27-10 10-27Z" fill="#F5FCFF"/>
+  <path d="m376 211 6 16 16 6-16 6-6 16-6-16-16-6 16-6 6-16Z" fill="#DFF8FF" fill-opacity=".9"/>
+</svg>
