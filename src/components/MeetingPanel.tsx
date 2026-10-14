@@ -1,4 +1,4 @@
-import { AudioLines, CircleStop, FileText, GripVertical, Mic, Pause, Play, Trash2, X } from 'lucide-react';
+import { AudioLines, CircleStop, FileText, GripVertical, Mic, MicOff, Pause, Play, Trash2, Volume2, VolumeX, X } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { AudioSource, TranscriptSegment } from '../../electron/contracts';
 import { errorMessage } from '../lib/errors';
@@ -13,12 +13,53 @@ type Props = {
 type MeetingState = 'setup' | 'starting' | 'recording' | 'paused' | 'summarizing' | 'finished';
 
 const SEGMENT_MS = 12_000;
+type AudioChannel = 'microphone' | 'computer';
+type ChannelValues<T> = Record<AudioChannel, T>;
+
+function measureAudioLevel(analyser: AnalyserNode): number {
+  const samples = new Uint8Array(analyser.fftSize);
+  analyser.getByteTimeDomainData(samples);
+  const rms = Math.sqrt(samples.reduce((sum, sample) => sum + ((sample - 128) / 128) ** 2, 0) / samples.length);
+  const decibels = 20 * Math.log10(Math.max(rms, 0.0001));
+  return Math.max(0, Math.min(1, (decibels + 60) / 54));
+}
+
+function AudioChannelMeter({ channel, level, muted, paused = false, onToggleMute }: {
+  channel: AudioChannel;
+  level: number;
+  muted: boolean;
+  paused?: boolean;
+  onToggleMute(): void;
+}) {
+  const label = channel === 'microphone' ? 'Microfone' : 'Saída do sistema';
+  const activeLabel = channel === 'microphone' ? 'Voz detectada' : 'Áudio detectado';
+  const Icon = channel === 'microphone' ? Mic : Volume2;
+  const MutedIcon = channel === 'microphone' ? MicOff : VolumeX;
+  const ActionIcon = muted ? Icon : MutedIcon;
+  const status = muted ? 'Silenciado na transcrição' : paused ? 'Pausado' : level > 0.08 ? activeLabel : 'Aguardando som';
+
+  return (
+    <div className={`audio-channel ${muted ? 'is-muted' : ''}`}>
+      <div className="audio-channel-heading"><span><Icon size={14} />{label}</span><strong>{status}</strong></div>
+      <div className="audio-channel-controls">
+        <div className="audio-level-track" role="meter" aria-label={`Nível de ${label.toLocaleLowerCase()}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(level * 100)} aria-valuetext={`${Math.round(level * 100)}%${muted ? ', silenciado na transcrição' : ''}`}>
+          <span style={{ transform: `scaleX(${level})` }} />
+        </div>
+        <button type="button" className="audio-channel-mute" aria-pressed={muted} aria-label={`${muted ? 'Ativar' : 'Silenciar'} ${label.toLocaleLowerCase()}`} onClick={onToggleMute}>
+          <ActionIcon size={14} />{muted ? 'Silenciado' : 'Silenciar'}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export function MeetingPanel({ hasApiKey, onClose, onSummary }: Props) {
   const [state, setState] = useState<MeetingState>('setup');
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const [pending, setPending] = useState(0);
   const [error, setError] = useState('');
+  const [audioLevels, setAudioLevels] = useState<ChannelValues<number>>({ microphone: 0, computer: 0 });
+  const [mutedChannels, setMutedChannels] = useState<ChannelValues<boolean>>({ microphone: false, computer: false });
   const streamsRef = useRef<MediaStream[]>([]);
   const mixedStreamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -30,6 +71,10 @@ export function MeetingPanel({ hasApiKey, onClose, onSummary }: Props) {
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const generationRef = useRef(0);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const channelGainsRef = useRef<Partial<Record<AudioChannel, GainNode>>>({});
+  const channelAnalysersRef = useRef<Partial<Record<AudioChannel, AnalyserNode>>>({});
+  const meterFrameRef = useRef<number | null>(null);
+  const mutedChannelsRef = useRef<ChannelValues<boolean>>({ microphone: false, computer: false });
   const transcriptionChainRef = useRef<Promise<void>>(Promise.resolve());
   const transcriptRef = useRef<TranscriptSegment[]>([]);
   const startInFlightRef = useRef(false);
@@ -90,8 +135,30 @@ export function MeetingPanel({ hasApiKey, onClose, onSummary }: Props) {
     streamsRef.current.forEach((stream) => stream.getTracks().forEach((track) => track.stop()));
     streamsRef.current = [];
     mixedStreamRef.current = null;
+    channelGainsRef.current = {};
+    channelAnalysersRef.current = {};
+    if (meterFrameRef.current !== null) cancelAnimationFrame(meterFrameRef.current);
+    meterFrameRef.current = null;
+    setAudioLevels({ microphone: 0, computer: 0 });
     if (audioContextRef.current) void audioContextRef.current.close();
     audioContextRef.current = null;
+  }, []);
+
+  const startMetering = useCallback(() => {
+    if (meterFrameRef.current !== null) cancelAnimationFrame(meterFrameRef.current);
+    let lastMeterUpdate = 0;
+    const updateMeters = (timestamp: number) => {
+      if (!runningRef.current) { meterFrameRef.current = null; return; }
+      if (timestamp - lastMeterUpdate >= 90) {
+        lastMeterUpdate = timestamp;
+        setAudioLevels({
+          microphone: channelAnalysersRef.current.microphone ? measureAudioLevel(channelAnalysersRef.current.microphone) : 0,
+          computer: channelAnalysersRef.current.computer ? measureAudioLevel(channelAnalysersRef.current.computer) : 0,
+        });
+      }
+      meterFrameRef.current = requestAnimationFrame(updateMeters);
+    };
+    meterFrameRef.current = requestAnimationFrame(updateMeters);
   }, []);
 
   useEffect(() => releaseMedia, [releaseMedia]);
@@ -135,12 +202,26 @@ export function MeetingPanel({ hasApiKey, onClose, onSummary }: Props) {
       if (!desktop.getAudioTracks().length) throw new Error('O Windows não disponibilizou áudio do sistema. Verifique se há som sendo reproduzido.');
       streams.push(desktop);
       streamsRef.current = streams;
-      sourceLabelRef.current = 'mixed';
       const destination = context.createMediaStreamDestination();
-      streams.forEach((stream) => context.createMediaStreamSource(stream).connect(destination));
+      const channels: AudioChannel[] = ['microphone', 'computer'];
+      streams.forEach((stream, index) => {
+        const channel = channels[index];
+        const source = context.createMediaStreamSource(stream);
+        const analyser = context.createAnalyser();
+        analyser.fftSize = 512;
+        const gain = context.createGain();
+        gain.gain.value = mutedChannelsRef.current[channel] ? 0 : 1;
+        source.connect(analyser);
+        analyser.connect(gain);
+        gain.connect(destination);
+        channelAnalysersRef.current[channel] = analyser;
+        channelGainsRef.current[channel] = gain;
+      });
+      sourceLabelRef.current = 'mixed';
       mixedStreamRef.current = destination.stream;
       runningRef.current = true;
       setState('recording');
+      startMetering();
       startSegment();
     } catch (reason) {
       releaseMedia();
@@ -149,7 +230,7 @@ export function MeetingPanel({ hasApiKey, onClose, onSummary }: Props) {
     } finally {
       startInFlightRef.current = false;
     }
-  }, [hasApiKey, releaseMedia, startSegment, state]);
+  }, [hasApiKey, releaseMedia, startMetering, startSegment, state]);
 
   useEffect(() => {
     if (!hasApiKey || autoStartRef.current) return;
@@ -165,6 +246,7 @@ export function MeetingPanel({ hasApiKey, onClose, onSummary }: Props) {
 
   const pause = () => {
     runningRef.current = false;
+    setAudioLevels({ microphone: 0, computer: 0 });
     if (timerRef.current !== null) window.clearTimeout(timerRef.current);
     if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
     streamsRef.current.forEach((stream) => stream.getAudioTracks().forEach((track) => { track.enabled = false; }));
@@ -175,7 +257,18 @@ export function MeetingPanel({ hasApiKey, onClose, onSummary }: Props) {
     streamsRef.current.forEach((stream) => stream.getAudioTracks().forEach((track) => { track.enabled = true; }));
     runningRef.current = true;
     setState('recording');
+    startMetering();
     startSegment();
+  };
+
+  const toggleChannelMuted = (channel: AudioChannel) => {
+    const nextMuted = !mutedChannels[channel];
+    const next = { ...mutedChannelsRef.current, [channel]: nextMuted };
+    mutedChannelsRef.current = next;
+    setMutedChannels(next);
+    const gain = channelGainsRef.current[channel];
+    const context = audioContextRef.current;
+    if (gain && context) gain.gain.setTargetAtTime(nextMuted ? 0 : 1, context.currentTime, 0.025);
   };
 
   const finish = async () => {
@@ -276,6 +369,10 @@ export function MeetingPanel({ hasApiKey, onClose, onSummary }: Props) {
       ) : (
         <>
           <div className="meeting-status"><span className={`recording-dot ${state === 'paused' || state === 'finished' ? 'is-paused' : ''}`} /><strong>{state === 'recording' ? 'Transcrevendo' : state === 'paused' ? 'Pausada' : state === 'summarizing' ? 'Gerando resposta' : 'Finalizada'}</strong><span>{pending ? `${pending} trecho${pending > 1 ? 's' : ''} em processamento` : 'Nenhum trecho pendente'}</span></div>
+          {(state === 'recording' || state === 'paused') && <section className="meeting-meters" aria-label="Medidores e controles de áudio">
+            <AudioChannelMeter channel="microphone" level={audioLevels.microphone} muted={mutedChannels.microphone} paused={state === 'paused'} onToggleMute={() => toggleChannelMuted('microphone')} />
+            <AudioChannelMeter channel="computer" level={audioLevels.computer} muted={mutedChannels.computer} paused={state === 'paused'} onToggleMute={() => toggleChannelMuted('computer')} />
+          </section>}
           <div className="transcript" aria-live="polite">
             {segments.map((segment) => <p key={segment.id}><time>{new Date(segment.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</time>{segment.text}</p>)}
             {!segments.length && <p className="transcript-empty">A transcrição aparecerá aqui em blocos de cerca de 12 segundos.</p>}
