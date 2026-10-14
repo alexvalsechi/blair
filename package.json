@@ -10,7 +10,8 @@
     "build": "tsc -b && vite build && tsc -p tsconfig.electron.json",
     "test": "vitest run",
     "check": "npm run test && npm run build",
-    "dist": "npm run build && electron-builder --config electron-builder.config.cjs --win nsis"
+    "dist": "npm run build && electron-builder --config electron-builder.config.cjs --win nsis",
+    "dist:portable": "npm run build && electron-builder --config electron-builder.config.cjs --win portable --publish never"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.6",

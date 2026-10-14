@@ -1,0 +1,80 @@
+name: Build portable Windows app
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: portable-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-portable:
+    name: Test and package portable EXE
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build portable executable
+        run: npm run dist:portable
+
+      - name: Upload portable executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: persona-portable-${{ github.sha }}
+          path: release/*.exe
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish continuous GitHub Release
+        if: github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: main-latest
+        run: |
+          $releaseExists = gh release view $env:RELEASE_TAG 2>$null
+
+          if ($LASTEXITCODE -eq 0) {
+            gh api --method PATCH `
+              "repos/$env:GH_REPO/git/refs/tags/$env:RELEASE_TAG" `
+              -f sha="${{ github.sha }}" `
+              -F force=true
+            gh release edit $env:RELEASE_TAG `
+              --title "Build mais recente da main" `
+              --notes "Build portátil automático do commit ${{ github.sha }}." `
+              --prerelease `
+              --latest=false
+          } else {
+            gh release create $env:RELEASE_TAG `
+              --target "${{ github.sha }}" `
+              --title "Build mais recente da main" `
+              --notes "Build portátil automático do commit ${{ github.sha }}." `
+              --prerelease `
+              --latest=false
+          }
+
+          Get-ChildItem -LiteralPath release -Filter *.exe | ForEach-Object {
+            gh release upload $env:RELEASE_TAG $_.FullName --clobber
+          }
