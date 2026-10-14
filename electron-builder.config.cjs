@@ -5,7 +5,6 @@ const branding = require("./branding.json");
 const appName = String(branding.appName ?? "Persona").trim();
 const normalizedName = appName.replace(/\.exe$/i, "").toLowerCase();
 const reservedWindowsNames = new Set([
-  "explorer",
   "svchost",
   "services",
   "winlogon",
