@@ -50,7 +50,7 @@ export function analysisModelPrice(modelId: string): string {
 
 export function transcriptionModelPrice(modelId: string): string {
   const price = findPrice(modelId, transcriptionPerMinute);
-  if (price !== undefined) return `${usd(price)} / minuto de áudio`;
+  if (price !== undefined) return `${usd(price * 30 * 2)} para 30 min (2 fontes de áudio)`;
   const tokens = findPrice(modelId, tokenPrices);
   return tokens
     ? `Áudio: ${usd(tokens.input)} entrada · ${usd(tokens.output)} saída / 1M tokens`
