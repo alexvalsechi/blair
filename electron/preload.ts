@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('persona', {
   },
   testConnection: (): Promise<AskResult> => ipcRenderer.invoke('settings:test'),
   listModels: (): Promise<string[]> => ipcRenderer.invoke('models:list'),
+  listAlibabaModels: (): Promise<string[]> => ipcRenderer.invoke('models:list-alibaba'),
   listTranscriptionModels: (): Promise<string[]> => ipcRenderer.invoke('models:transcription-list'),
   openSettings: (): Promise<void> => ipcRenderer.invoke('window:open-settings'),
   closeSettings: (): Promise<void> => ipcRenderer.invoke('window:close-settings'),

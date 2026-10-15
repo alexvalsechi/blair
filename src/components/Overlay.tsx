@@ -42,7 +42,8 @@ const initialAnswer: AnswerState = {
 };
 
 export function Overlay() {
-  const [settings, setSettings] = useState({ opacity: 0.86, hasApiKey: false, hasAlibabaTranscriptionApiKey: false, alibabaWorkspaceHost: '', transcriptionProvider: 'openai' as 'openai' | 'alibaba', model: 'gpt-5.5', scale: 1, layoutPosition: 'center' });
+  const [settings, setSettings] = useState({ opacity: 0.86, hasApiKey: false, hasAlibabaApiKey: false, analysisProvider: 'openai' as 'openai' | 'alibaba', alibabaWorkspaceHost: '', transcriptionProvider: 'openai' as 'openai' | 'alibaba', model: 'gpt-5.5', scale: 1, layoutPosition: 'center' });
+  const hasAnalysisApiKey = settings.analysisProvider === 'alibaba' ? settings.hasAlibabaApiKey : settings.hasApiKey;
   const [promptOpen, setPromptOpen] = useState(false);
   const [prompt, setPrompt] = useState('');
   const [answerOpen, setAnswerOpen] = useState(true);
@@ -74,9 +75,9 @@ export function Overlay() {
   const [selectedMemory, setSelectedMemory] = useState<MemoryContext[]>([]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
-  const promptDrag = useDragPosition({ x: 0, y: 0 });
-  const answerDrag = useDragPosition({ x: 0, y: 0 });
-  const dockDrag = useDragPosition({ x: 0, y: 0 });
+  const promptDrag = useDragPosition({ x: 0, y: 0 }, 'persona.overlay.prompt-position');
+  const answerDrag = useDragPosition({ x: 0, y: 0 }, 'persona.overlay.answer-position');
+  const dockDrag = useDragPosition({ x: 0, y: 0 }, 'persona.overlay.dock-position');
 
   useEffect(() => {
     const publishInteractiveRegions = () => {
@@ -100,12 +101,12 @@ export function Overlay() {
 
   useEffect(() => {
     void window.persona.getSettings().then((value) => {
-      setSettings({ opacity: value.opacity, hasApiKey: value.hasApiKey, hasAlibabaTranscriptionApiKey: value.hasAlibabaTranscriptionApiKey, alibabaWorkspaceHost: value.alibabaWorkspaceHost, transcriptionProvider: value.transcriptionProvider, model: value.model, scale: value.scale, layoutPosition: value.layoutPosition });
+      setSettings({ opacity: value.opacity, hasApiKey: value.hasApiKey, hasAlibabaApiKey: value.hasAlibabaApiKey, analysisProvider: value.analysisProvider, alibabaWorkspaceHost: value.alibabaWorkspaceHost, transcriptionProvider: value.transcriptionProvider, model: value.model, scale: value.scale, layoutPosition: value.layoutPosition });
     });
   }, []);
 
   useEffect(() => window.persona.onSettingsUpdated((value) => {
-    setSettings({ opacity: value.opacity, hasApiKey: value.hasApiKey, hasAlibabaTranscriptionApiKey: value.hasAlibabaTranscriptionApiKey, alibabaWorkspaceHost: value.alibabaWorkspaceHost, transcriptionProvider: value.transcriptionProvider, model: value.model, scale: value.scale, layoutPosition: value.layoutPosition });
+    setSettings({ opacity: value.opacity, hasApiKey: value.hasApiKey, hasAlibabaApiKey: value.hasAlibabaApiKey, analysisProvider: value.analysisProvider, alibabaWorkspaceHost: value.alibabaWorkspaceHost, transcriptionProvider: value.transcriptionProvider, model: value.model, scale: value.scale, layoutPosition: value.layoutPosition });
   }), []);
 
   useEffect(() => { void window.persona.listProfiles().then(setProfiles); }, []);
@@ -191,7 +192,7 @@ export function Overlay() {
   const submit = useCallback(
     async (imageDataUrl?: string) => {
       if (answer.status === 'loading' || meetingIsAnalyzing || (captureInFlight.current && !imageDataUrl)) return;
-      if (!settings.hasApiKey) {
+      if (!hasAnalysisApiKey) {
         setAnswerOpen(true);
         setAnswer({ status: 'error', text: 'Configure sua chave OpenAI para começar.' });
         await window.persona.openSettings();
@@ -223,7 +224,7 @@ export function Overlay() {
         setAnswer({ status: 'error', text: errorMessage(error) });
       }
     },
-    [activeProfileId, answer, attachments, meetingIsAnalyzing, openPrompt, prompt, selectedMemory, settings.hasApiKey],
+    [activeProfileId, answer, attachments, hasAnalysisApiKey, meetingIsAnalyzing, openPrompt, prompt, selectedMemory],
   );
 
   const addAttachments = async () => {
@@ -238,7 +239,7 @@ export function Overlay() {
 
   const openCapture = useCallback(async () => {
     if (captureInFlight.current || answer.status === 'loading' || meetingIsAnalyzing) return;
-    if (!settings.hasApiKey) {
+    if (!hasAnalysisApiKey) {
       setAnswerOpen(true);
       setAnswer({ status: 'error', text: 'Configure sua chave OpenAI para começar.' });
       await window.persona.openSettings();
@@ -257,7 +258,7 @@ export function Overlay() {
       captureInFlight.current = false;
       setIsCapturing(false);
     }
-  }, [answer.status, meetingIsAnalyzing, settings.hasApiKey, submit]);
+  }, [answer.status, hasAnalysisApiKey, meetingIsAnalyzing, submit]);
 
   useEffect(() => {
     return window.persona.onShortcut((action: ShortcutAction) => {
@@ -362,12 +363,13 @@ export function Overlay() {
           className="prompt-rail glass-surface"
           style={{ ['--drag-x' as string]: `${promptDrag.offset.x}px`, ['--drag-y' as string]: `${promptDrag.offset.y}px` }}
           data-interactive
+          onPointerDown={promptDrag.startDrag}
           onSubmit={(event) => {
             event.preventDefault();
             void submit();
           }}
         >
-          <span className="drag-grip" onMouseDown={promptDrag.startDrag} title="Arraste para mover a pergunta"><Sparkles size={20} className="accent-icon" aria-hidden="true" /></span>
+          <span className="drag-grip" title="Arraste a área livre para mover a pergunta"><Sparkles size={20} className="accent-icon" aria-hidden="true" /></span>
           <input
             ref={inputRef}
             value={prompt}
@@ -389,8 +391,8 @@ export function Overlay() {
 
       {(answerOpen || meetingOpen) && (
         <section ref={answerPanelRef} className={`answer-panel glass-surface answer-${answer.status} ${meetingOpen ? 'has-meeting-tabs' : ''}`} style={{ ['--drag-x' as string]: `${answerDrag.offset.x}px`, ['--drag-y' as string]: `${answerDrag.offset.y}px`, ...(answerSize ? { width: `${answerSize.width}px`, height: `${answerSize.height}px`, left: `${answerSize.left}px`, top: `${answerSize.top}px`, transform: `translate(${answerDrag.offset.x - answerSize.dragOriginX}px, ${answerDrag.offset.y - answerSize.dragOriginY}px) scale(var(--overlay-scale, 1))`, transformOrigin: 'top left', paddingInline: `${Math.max(6, Math.min(26, (answerSize.width - 120) / 2))}px` } : {}) }} data-interactive aria-live="polite">
-          <header className="answer-header">
-            <span className="answer-title drag-grip" aria-label="Resposta" onMouseDown={answerDrag.startDrag} title="Arraste para mover a resposta"><MessageSquareText size={19} /><span>Resposta</span></span>
+          <header className="answer-header drag-grip" onPointerDown={answerDrag.startDrag}>
+            <span className="answer-title" aria-label="Resposta" title="Arraste o cabeçalho para mover a resposta"><MessageSquareText size={19} /><span>Resposta</span></span>
             <span className="answer-actions">
               <button
                 className={`icon-button ${alwaysOnTop ? 'is-active' : ''}`}
@@ -420,8 +422,8 @@ export function Overlay() {
 
           {meetingOpen && <div className="answer-copy meeting-answer-copy" hidden={responseTab !== 'transcript'}>
             <MeetingPanel
-              hasApiKey={settings.hasApiKey}
-              hasAlibabaApiKey={settings.hasAlibabaTranscriptionApiKey}
+              hasApiKey={hasAnalysisApiKey}
+              hasAlibabaApiKey={settings.hasAlibabaApiKey}
               hasAlibabaWorkspaceHost={Boolean(settings.alibabaWorkspaceHost)}
               alibabaWorkspaceHost={settings.alibabaWorkspaceHost}
               transcriptionProvider={settings.transcriptionProvider}
@@ -479,8 +481,8 @@ export function Overlay() {
       )}
 
       {dockVisible && (
-        <nav className="command-dock glass-surface" style={{ ['--drag-x' as string]: `${dockDrag.offset.x}px`, ['--drag-y' as string]: `${dockDrag.offset.y}px` }} data-interactive aria-label="Ações rápidas">
-          <span className={`dock-drag-handle drag-grip ${interactionMode ? 'is-interactive' : ''}`} onMouseDown={dockDrag.startDrag} title="Arraste para mover a barra (Ctrl+Shift+I ativa edição)"><GripVertical size={16} /></span>
+        <nav className="command-dock glass-surface" style={{ ['--drag-x' as string]: `${dockDrag.offset.x}px`, ['--drag-y' as string]: `${dockDrag.offset.y}px` }} data-interactive aria-label="Ações rápidas" onPointerDown={dockDrag.startDrag} title="Arraste pela área livre para mover a barra; os botões continuam clicáveis">
+          <span className={`dock-drag-handle drag-grip ${interactionMode ? 'is-interactive' : ''}`}><GripVertical size={16} /></span>
           <button className="dock-action dock-primary" type="button" onClick={openPrompt}>
             <MessageSquareText size={19} /> Perguntar
           </button>

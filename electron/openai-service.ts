@@ -1,5 +1,5 @@
 import OpenAI, { toFile } from 'openai';
-import type { AskInput, AskResult, StreamEvent } from './contracts.js';
+import type { AlibabaReasoningEffort, AskInput, AskResult, StreamEvent } from './contracts.js';
 import { isResponseModelId, isTranscriptionModelId } from './validation.js';
 
 const SYSTEM_INSTRUCTIONS = [
@@ -13,7 +13,7 @@ const SYSTEM_INSTRUCTIONS = [
   'Não acrescente diagramas quando não forem pedidos nem ajudarem de forma clara; prefira uma explicação textual se o desenho ficar grande ou confuso.',
 ].join(' ');
 
-export type AssistantExecutionOptions = { instructions?: string; maxOutputTokens?: number };
+export type AssistantExecutionOptions = { instructions?: string; reasoningEffort?: Exclude<AlibabaReasoningEffort, 'default'> };
 
 function buildRequest(input: AskInput): Array<any> {
   const prompt = input.prompt.trim() || 'Analise o contexto fornecido e destaque o que merece atenção.';
@@ -39,55 +39,131 @@ function buildRequest(input: AskInput): Array<any> {
   return content;
 }
 
-export async function askOpenAI(apiKey: string, model: string, input: AskInput, options: AssistantExecutionOptions = {}): Promise<AskResult> {
-  const client = new OpenAI({ apiKey });
+function createClient(apiKey: string, baseURL?: string): OpenAI {
+  return new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
+}
+
+function alibabaBaseURL(workspaceHost: string): string {
+  return `https://${workspaceHost}/compatible-mode/v1`;
+}
+
+export async function askOpenAI(apiKey: string, model: string, input: AskInput, options: AssistantExecutionOptions = {}, baseURL?: string): Promise<AskResult> {
+  const client = createClient(apiKey, baseURL);
   const content = buildRequest(input);
+  const instructions = [SYSTEM_INSTRUCTIONS, options.instructions].filter(Boolean).join(' ');
+  const reasoning = baseURL && options.reasoningEffort ? { reasoning: { effort: options.reasoningEffort } } : {};
+  let messages: any[] = [{ role: 'user', content }];
+  let completeText = '';
+  let requestId: string | undefined;
 
-  const response = await client.responses.create({
-    model,
-    instructions: [SYSTEM_INSTRUCTIONS, options.instructions].filter(Boolean).join(' '),
-    input: [{ role: 'user', content }],
-    store: false,
-    max_output_tokens: options.maxOutputTokens,
-  });
-
-  if (response.status === 'incomplete') {
-    const reason = response.incomplete_details?.reason;
-    throw new Error(reason === 'max_output_tokens'
-      ? `A resposta atingiu o orçamento configurado de ${options.maxOutputTokens?.toLocaleString('pt-BR') ?? 'saída'} tokens e pode estar incompleta.`
-      : 'O provedor encerrou a resposta antes de concluí-la.');
+  while (true) {
+    const response = await client.responses.create({ model, instructions, input: messages, store: false, ...reasoning });
+    requestId = response._request_id ?? requestId;
+    if (response.status === 'failed') throw new Error(response.error?.message ?? 'O provedor não conseguiu concluir a resposta.');
+    if (response.status === 'incomplete') {
+      const reason = response.incomplete_details?.reason;
+      const partial = response.output_text ?? '';
+      if (reason === 'max_output_tokens' && partial) {
+        completeText += partial;
+        messages = continuationMessages(content, completeText);
+        continue;
+      }
+      throw new Error(reason === 'content_filter' ? 'O provedor interrompeu a resposta por uma regra de conteúdo.' : 'O provedor encerrou a resposta antes de concluí-la. A resposta parcial foi preservada no histórico.');
+    }
+    completeText += response.output_text ?? '';
+    return { text: completeText || 'O provedor concluiu a solicitação sem retornar texto.', requestId };
   }
-  if (response.status === 'failed') throw new Error(response.error?.message ?? 'O provedor não conseguiu concluir a resposta.');
-
-  return {
-    text: response.output_text || 'A OpenAI concluiu a solicitação sem retornar texto.',
-    requestId: response._request_id ?? undefined,
-  };
 }
 
 export async function streamOpenAI(
   apiKey: string, model: string, input: AskInput, signal: AbortSignal,
   onEvent: (event: StreamEvent) => void,
   options: AssistantExecutionOptions = {},
+  baseURL?: string,
 ): Promise<void> {
-  const client = new OpenAI({ apiKey });
+  const client = createClient(apiKey, baseURL);
   const content = buildRequest(input);
-  const stream = await client.responses.create({ model, instructions: [SYSTEM_INSTRUCTIONS, options.instructions].filter(Boolean).join(' '), input: [{ role: 'user', content }], store: false, stream: true, max_output_tokens: options.maxOutputTokens }, { signal });
-  for await (const event of stream) {
-    if (event.type === 'response.output_text.delta') onEvent({ type: 'delta', text: event.delta });
-    else if (event.type === 'response.completed') onEvent({ type: 'done', requestId: (event.response as unknown as { _request_id?: string })._request_id });
-    else if (event.type === 'response.incomplete') {
-      const reason = event.response.incomplete_details?.reason;
-      const message = reason === 'max_output_tokens'
-        ? `A resposta atingiu o orçamento configurado de ${options.maxOutputTokens?.toLocaleString('pt-BR') ?? 'saída'} tokens e pode estar incompleta.`
-        : reason === 'content_filter'
-          ? 'O provedor interrompeu a resposta por uma regra de conteúdo.'
-          : 'O provedor encerrou a resposta antes de concluí-la.';
-      onEvent({ type: 'incomplete', message });
-    } else if (event.type === 'response.failed') {
-      onEvent({ type: 'error', message: event.response.error?.message ?? 'O provedor não conseguiu concluir a resposta.' });
-    } else if (event.type === 'error') onEvent({ type: 'error', message: event.message });
+  const instructions = [SYSTEM_INSTRUCTIONS, options.instructions].filter(Boolean).join(' ');
+  const reasoning = baseURL && options.reasoningEffort ? { reasoning: { effort: options.reasoningEffort } } : {};
+  let messages: any[] = [{ role: 'user', content }];
+  let previousText = '';
+
+  while (!signal.aborted) {
+    let segmentText = '';
+    let shouldContinue = false;
+    let completed = false;
+    let requestId: string | undefined;
+    const stream = await client.responses.create({ model, instructions, input: messages, store: false, stream: true, ...reasoning }, { signal });
+    for await (const event of stream) {
+      if (event.type === 'response.output_text.delta') {
+        segmentText += event.delta;
+        onEvent({ type: 'delta', text: event.delta });
+      } else if (event.type === 'response.completed') {
+        completed = true;
+        requestId = (event.response as unknown as { _request_id?: string })._request_id;
+      } else if (event.type === 'response.incomplete') {
+        const reason = event.response.incomplete_details?.reason;
+        shouldContinue = reason === 'max_output_tokens' && segmentText.length > 0;
+        if (!shouldContinue) onEvent({ type: 'incomplete', message: reason === 'content_filter' ? 'O provedor interrompeu a resposta por uma regra de conteúdo.' : 'O provedor encerrou a resposta antes de concluí-la.' });
+      } else if (event.type === 'response.failed') {
+        onEvent({ type: 'error', message: event.response.error?.message ?? 'O provedor não conseguiu concluir a resposta.' });
+        return;
+      } else if (event.type === 'error') {
+        onEvent({ type: 'error', message: event.message });
+        return;
+      }
+    }
+    if (completed) { onEvent({ type: 'done', requestId }); return; }
+    if (shouldContinue && segmentText.length > 0 && !signal.aborted) {
+      previousText += segmentText;
+      messages = continuationMessages(content, previousText);
+      continue;
+    }
+    return;
   }
+}
+
+function continuationMessages(content: any[], partialResponse: string): any[] {
+  return [
+    { role: 'user', content },
+    { role: 'assistant', content: partialResponse },
+    { role: 'user', content: 'Continue a resposta exatamente do ponto em que parou. Não repita o texto anterior, preserve a estrutura e conclua todos os tópicos pendentes.' },
+  ];
+}
+
+export function askAlibaba(apiKey: string, workspaceHost: string, model: string, input: AskInput, options: AssistantExecutionOptions = {}): Promise<AskResult> {
+  return askOpenAI(apiKey, model, input, options, alibabaBaseURL(workspaceHost));
+}
+
+export function streamAlibaba(
+  apiKey: string, workspaceHost: string, model: string, input: AskInput, signal: AbortSignal,
+  onEvent: (event: StreamEvent) => void, options: AssistantExecutionOptions = {},
+): Promise<void> {
+  return streamOpenAI(apiKey, model, input, signal, onEvent, options, alibabaBaseURL(workspaceHost));
+}
+
+export async function listAlibabaAvailableModels(apiKey: string, workspaceHost: string): Promise<string[]> {
+  const region = workspaceHost.match(/\.([a-z0-9-]+)\.maas\.aliyuncs\.com$/i)?.[1];
+  const host = region === 'ap-southeast-1' ? 'https://dashscope-intl.aliyuncs.com' : `https://${workspaceHost}`;
+  const models: string[] = [];
+  const pageSize = 100;
+  for (let page = 1; page <= 20; page += 1) {
+    const url = new URL('/api/v1/models', host);
+    url.searchParams.set('capabilities', 'TG');
+    url.searchParams.set('page_no', String(page));
+    url.searchParams.set('page_size', String(pageSize));
+    url.searchParams.set('language', 'en-US');
+    const response = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' }, signal: AbortSignal.timeout(20_000) });
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '');
+      throw new Error(`Alibaba Cloud não retornou a lista de modelos (${response.status}). ${detail.slice(0, 300)}`.trim());
+    }
+    const payload = await response.json() as { output?: { total?: number; models?: Array<{ model?: string; capabilities?: string[] }> } };
+    const entries = payload.output?.models ?? [];
+    models.push(...entries.filter((entry) => entry.model && (!entry.capabilities?.length || entry.capabilities.includes('TG'))).map((entry) => entry.model!));
+    if (entries.length < pageSize || models.length >= (payload.output?.total ?? Infinity)) break;
+  }
+  return [...new Set(models)].sort((a, b) => a.localeCompare(b));
 }
 
 export async function listAvailableModels(apiKey: string): Promise<string[]> {

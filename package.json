@@ -1,6 +1,6 @@
 {
   "name": "persona-desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Assistente de IA discreto para reuniões no Windows.",
   "main": "dist-electron/main.js",

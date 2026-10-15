@@ -1,18 +1,19 @@
 import { Activity, Bot, Check, ChevronRight, Eye, EyeOff, Keyboard, LockKeyhole, MessageSquareText, Mic, Monitor, Paperclip, Plus, Save, Settings2, ShieldCheck, Sparkles, Trash2, X } from 'lucide-react';
 import { FormEvent, KeyboardEvent as ReactKeyboardEvent, useEffect, useMemo, useState } from 'react';
-import type { AssistantProfile, Attachment, ModelPolicy, ProfileModelPolicy, SaveAssistantProfileInput } from '../../electron/contracts';
+import type { AlibabaReasoningEffort, AssistantProfile, Attachment, CaptureSource, ModelPolicy, SaveAssistantProfileInput } from '../../electron/contracts';
 import { MAX_INSTRUCTIONS_LENGTH } from '../../electron/contracts';
 import { errorMessage } from '../lib/errors';
 import { alibabaTranscriptionModelPrice, analysisModelPrice, transcriptionModelPrice } from '../lib/model-pricing';
-import { DEFAULT_MAX_OUTPUT_TOKENS } from '../../electron/validation';
+import { filterCurrentAnalysisModels, supportsAlibabaReasoning } from '../../electron/validation';
 
-type Page = 'connection' | 'models' | 'agents' | 'privacy' | 'appearance' | 'shortcuts';
+type Page = 'connection' | 'models' | 'capture' | 'agents' | 'privacy' | 'appearance' | 'shortcuts';
 type Notice = { tone: 'success' | 'error'; text: string } | null;
 type ModelTask = 'analysis' | 'transcription';
 
 const nav: { id: Page; label: string; icon: typeof Settings2 }[] = [
-  { id: 'connection', label: 'Conexão', icon: Activity },
+  { id: 'connection', label: 'Conexões', icon: Activity },
   { id: 'models', label: 'Modelos', icon: Sparkles },
+  { id: 'capture', label: 'Captura de tela', icon: Monitor },
   { id: 'agents', label: 'Agentes especialistas', icon: Bot },
   { id: 'privacy', label: 'Privacidade', icon: ShieldCheck },
   { id: 'appearance', label: 'Aparência', icon: Monitor },
@@ -20,12 +21,17 @@ const nav: { id: Page; label: string; icon: typeof Settings2 }[] = [
 ];
 
 const emptyAgent: SaveAssistantProfileInput = { name: '', instructions: '', modelPolicy: 'default' };
-const policyLabels: Record<ProfileModelPolicy, string> = { default: 'Padrão global', economy: 'Economia', balanced: 'Equilíbrio', quality: 'Qualidade' };
-const policyDescriptions: Record<ModelPolicy, string> = {
-  economy: 'Para tarefas rápidas, sínteses curtas e alto volume.',
-  balanced: 'O padrão para perguntas, análise de tela e reuniões.',
-  quality: 'Para raciocínio mais exigente e respostas detalhadas.',
-};
+function readModelCache(key: string, provider?: 'openai' | 'alibaba'): string[] {
+  try {
+    const cached = JSON.parse(localStorage.getItem(key) ?? '[]');
+    if (!Array.isArray(cached) || !cached.every((item) => typeof item === 'string')) return [];
+    return provider ? filterCurrentAnalysisModels(cached, provider) : cached;
+  } catch { return []; }
+}
+
+function storeModelCache(key: string, models: string[]): void {
+  try { localStorage.setItem(key, JSON.stringify(models)); } catch { /* cache is optional */ }
+}
 
 function moveTabFocus(event: ReactKeyboardEvent<HTMLButtonElement>) {
   if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
@@ -41,24 +47,28 @@ export function Settings() {
   const [page, setPage] = useState<Page>('connection');
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
-  const [alibabaTranscriptionApiKey, setAlibabaTranscriptionApiKey] = useState('');
+  const [alibabaApiKey, setAlibabaApiKey] = useState('');
   const [showAlibabaKey, setShowAlibabaKey] = useState(false);
-  const [hasAlibabaTranscriptionApiKey, setHasAlibabaTranscriptionApiKey] = useState(false);
+  const [hasAlibabaApiKey, setHasAlibabaApiKey] = useState(false);
   const [alibabaWorkspaceHost, setAlibabaWorkspaceHost] = useState('');
+  const [captureSourceId, setCaptureSourceId] = useState('');
   const [hasApiKey, setHasApiKey] = useState(false);
-  const [modelPolicy, setModelPolicy] = useState<ModelPolicy>('balanced');
-  const [viewPolicy, setViewPolicy] = useState<ModelPolicy>('balanced');
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [policyModels, setPolicyModels] = useState<Record<ModelPolicy, string>>({ economy: 'gpt-5.5', balanced: 'gpt-5.5', quality: 'gpt-5.5' });
+  const [alibabaPolicyModels, setAlibabaPolicyModels] = useState<Record<ModelPolicy, string>>({ economy: 'qwen-turbo', balanced: 'qwen-plus', quality: 'qwen-max' });
+  const [alibabaReasoningEfforts, setAlibabaReasoningEfforts] = useState<Record<string, AlibabaReasoningEffort>>({});
+  const [analysisProvider, setAnalysisProvider] = useState<'openai' | 'alibaba'>('openai');
   const [transcriptionModel, setTranscriptionModel] = useState('gpt-4o-mini-transcribe');
   const [transcriptionProvider, setTranscriptionProvider] = useState<'openai' | 'alibaba'>('openai');
-  const [modelOptions, setModelOptions] = useState<string[]>([]);
-  const [transcriptionOptions, setTranscriptionOptions] = useState<string[]>([]);
+  const [modelOptions, setModelOptions] = useState<string[]>(() => readModelCache('persona.models.openai.analysis', 'openai'));
+  const [alibabaModelOptions, setAlibabaModelOptions] = useState<string[]>(() => readModelCache('persona.models.alibaba.analysis', 'alibaba'));
+  const [transcriptionOptions, setTranscriptionOptions] = useState<string[]>(() => readModelCache('persona.models.openai.transcription'));
+  const [captureScreens, setCaptureScreens] = useState<CaptureSource[]>([]);
   const [modelTask, setModelTask] = useState<ModelTask>('analysis');
   const [contentProtection, setContentProtection] = useState(true);
   const [historyEnabled, setHistoryEnabled] = useState(false);
   const [scale, setScale] = useState(1);
   const [layoutPosition, setLayoutPosition] = useState<'center' | 'upper-right' | 'lower-center'>('center');
-  const [maxOutputTokens, setMaxOutputTokens] = useState(DEFAULT_MAX_OUTPUT_TOKENS);
   const [profiles, setProfiles] = useState<AssistantProfile[]>([]);
   const [activeProfileId, setActiveProfileId] = useState(() => localStorage.getItem('persona.activeProfile') ?? 'general');
   const [draft, setDraft] = useState<SaveAssistantProfileInput>(emptyAgent);
@@ -66,26 +76,58 @@ export function Settings() {
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
   const [loadingModels, setLoadingModels] = useState(false);
+  const [loadingScreens, setLoadingScreens] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
   const [diagnostic, setDiagnostic] = useState('');
 
   useEffect(() => {
     void window.persona.getSettings().then((settings) => {
       setHasApiKey(settings.hasApiKey); setContentProtection(settings.contentProtection);
-      setHasAlibabaTranscriptionApiKey(settings.hasAlibabaTranscriptionApiKey); setAlibabaWorkspaceHost(settings.alibabaWorkspaceHost);
-      setHistoryEnabled(settings.historyEnabled); setModelPolicy(settings.modelPolicy); setPolicyModels(settings.policyModels); setTranscriptionModel(settings.transcriptionModel); setTranscriptionProvider(settings.transcriptionProvider);
-      setMaxOutputTokens(settings.maxOutputTokens); setScale(settings.scale); setLayoutPosition(settings.layoutPosition);
-    });
+      setHasAlibabaApiKey(settings.hasAlibabaApiKey); setAlibabaWorkspaceHost(settings.alibabaWorkspaceHost);
+      setCaptureSourceId(settings.captureSourceId);
+      setHistoryEnabled(settings.historyEnabled); setPolicyModels(settings.policyModels); setAlibabaPolicyModels(settings.alibabaPolicyModels); setAlibabaReasoningEfforts(settings.alibabaReasoningEfforts); setAnalysisProvider(settings.analysisProvider); setTranscriptionModel(settings.transcriptionModel); setTranscriptionProvider(settings.transcriptionProvider);
+      setScale(settings.scale); setLayoutPosition(settings.layoutPosition); setSettingsLoaded(true);
+    }).catch((error) => setNotice({ tone: 'error', text: errorMessage(error) }));
     void window.persona.listProfiles().then(setProfiles);
   }, []);
 
   const selectedProfile = useMemo(() => profiles.find((profile) => profile.id === activeProfileId) ?? profiles[0], [activeProfileId, profiles]);
+  const visibleModelOptions = analysisProvider === 'alibaba' ? alibabaModelOptions : modelOptions;
+  const visiblePolicyModels = analysisProvider === 'alibaba' ? alibabaPolicyModels : policyModels;
+  const selectedAnalysisModel = visiblePolicyModels.balanced;
+  const selectedIsLegacy = Boolean(selectedAnalysisModel && visibleModelOptions.length && !visibleModelOptions.includes(selectedAnalysisModel));
+  const catalogModelOptions = !visibleModelOptions.length || visibleModelOptions.includes(selectedAnalysisModel) || loadingModels || !selectedAnalysisModel
+    ? visibleModelOptions
+    : [selectedAnalysisModel, ...visibleModelOptions];
+  const selectedAlibabaModel = visiblePolicyModels.balanced;
+  const selectedAlibabaReasoning = alibabaReasoningEfforts[selectedAlibabaModel] ?? 'default';
+  const chooseAnalysisModel = (modelId: string) => {
+    if (analysisProvider === 'alibaba') setAlibabaPolicyModels({ economy: modelId, balanced: modelId, quality: modelId });
+    else setPolicyModels({ economy: modelId, balanced: modelId, quality: modelId });
+  };
+
+  useEffect(() => {
+    if (page !== 'capture') return;
+    let active = true;
+    setLoadingScreens(true);
+    void window.persona.listCaptureSources()
+      .then((sources) => { if (active) setCaptureScreens(sources.filter((source) => source.kind === 'screen')); })
+      .catch((error) => { if (active) setNotice({ tone: 'error', text: errorMessage(error) }); })
+      .finally(() => { if (active) setLoadingScreens(false); });
+    return () => { active = false; };
+  }, [page]);
 
   const saveSettings = async (event?: FormEvent) => {
     event?.preventDefault(); setBusy(true); setNotice(null);
     try {
-      const saved = await window.persona.saveSettings({ apiKey: apiKey.trim() || undefined, alibabaTranscriptionApiKey: alibabaTranscriptionApiKey.trim() || undefined, alibabaWorkspaceHost, model: policyModels.balanced, transcriptionModel, transcriptionProvider, contentProtection, historyEnabled, modelPolicy, policyModels, maxOutputTokens, scale, layoutPosition });
-      setHasApiKey(saved.hasApiKey); setApiKey(''); setHasAlibabaTranscriptionApiKey(saved.hasAlibabaTranscriptionApiKey); setAlibabaTranscriptionApiKey('');
+      const saved = await window.persona.saveSettings({ apiKey: apiKey.trim() || undefined, alibabaApiKey: alibabaApiKey.trim() || undefined, alibabaWorkspaceHost, captureSourceId, analysisProvider, model: policyModels.balanced, transcriptionModel, transcriptionProvider, contentProtection, historyEnabled, modelPolicy: 'balanced', policyModels, alibabaPolicyModels, alibabaReasoningEfforts, scale, layoutPosition });
+      setHasApiKey(saved.hasApiKey); setApiKey(''); setHasAlibabaApiKey(saved.hasAlibabaApiKey); setAlibabaWorkspaceHost(saved.alibabaWorkspaceHost);
+      setAlibabaReasoningEfforts(saved.alibabaReasoningEfforts);
+      if (alibabaApiKey.trim() && !saved.hasAlibabaApiKey) {
+        setNotice({ tone: 'error', text: 'As configurações foram salvas, mas a API Key Alibaba não foi confirmada no armazenamento seguro. A chave continua no campo para você tentar novamente.' });
+        return;
+      }
+      setAlibabaApiKey('');
       setNotice({ tone: 'success', text: 'Configurações salvas com segurança.' });
     } catch (error) { setNotice({ tone: 'error', text: errorMessage(error) }); }
     finally { setBusy(false); }
@@ -96,15 +138,41 @@ export function Settings() {
       setTranscriptionOptions(['qwen-audio-3.1-asr-flash-streaming']);
       return;
     }
+    if (modelTask === 'analysis' && analysisProvider === 'alibaba') {
+      if (!hasAlibabaApiKey || !alibabaWorkspaceHost) {
+        setPage('connection'); setNotice({ tone: 'error', text: 'Configure a API Key Alibaba e o API Host em Conexões para carregar os modelos.' });
+        return;
+      }
+      setLoadingModels(true); setNotice(null);
+      try {
+        const models = filterCurrentAnalysisModels(await window.persona.listAlibabaModels(), 'alibaba');
+        setAlibabaModelOptions(models); storeModelCache('persona.models.alibaba.analysis', models);
+      }
+      catch (error) { setNotice({ tone: 'error', text: errorMessage(error) }); }
+      finally { setLoadingModels(false); }
+      return;
+    }
     if (!hasApiKey) { setPage('connection'); setNotice({ tone: 'error', text: 'Conecte sua chave OpenAI para carregar os modelos da conta.' }); return; }
     setLoadingModels(true); setNotice(null);
     try {
-      if (modelTask === 'transcription') setTranscriptionOptions(await window.persona.listTranscriptionModels());
-      else setModelOptions(await window.persona.listModels());
+      if (modelTask === 'transcription') {
+        const models = await window.persona.listTranscriptionModels();
+        setTranscriptionOptions(models); storeModelCache('persona.models.openai.transcription', models);
+      } else {
+        const models = filterCurrentAnalysisModels(await window.persona.listModels(), 'openai');
+        setModelOptions(models); storeModelCache('persona.models.openai.analysis', models);
+      }
     }
     catch (error) { setNotice({ tone: 'error', text: errorMessage(error) }); }
     finally { setLoadingModels(false); }
   };
+
+  useEffect(() => {
+    if (!settingsLoaded || page !== 'models') return;
+    if (modelTask === 'analysis' && analysisProvider === 'alibaba' && (!hasAlibabaApiKey || !alibabaWorkspaceHost)) return;
+    if ((modelTask === 'analysis' && analysisProvider === 'openai' || modelTask === 'transcription' && transcriptionProvider === 'openai') && !hasApiKey) return;
+    void loadModels();
+  }, [settingsLoaded, page, modelTask, analysisProvider, transcriptionProvider, hasApiKey, hasAlibabaApiKey, alibabaWorkspaceHost]);
 
   const testConnection = async () => {
     setTesting(true); setNotice(null);
@@ -160,8 +228,6 @@ export function Settings() {
     finally { setBusy(false); }
   };
 
-  const choosePolicy = (policy: ModelPolicy) => { setModelPolicy(policy); };
-
   return (
     <main className="settings-app">
       <header className="settings-topbar">
@@ -188,19 +254,42 @@ export function Settings() {
             <section className="settings-section provider-row"><div className="provider-glyph">◎</div><div><strong>OpenAI</strong><p>Provedor ativo para análise, respostas e transcrição.</p></div><span className="provider-tag">API Key</span></section>
           </>}
 
+          {page === 'connection' && <section className="settings-section alibaba-transcription-settings" aria-label="Configuração Alibaba Cloud">
+              <h2>Alibaba Cloud Model Studio</h2>
+              <p className="settings-section-copy">Configure a chave e o API Host uma única vez. Eles podem ser usados tanto na transcrição quanto na análise/chat, quando a chave tiver permissão para os modelos escolhidos.</p>
+              <label className="settings-label" htmlFor="alibaba-transcription-key">API Key do Model Studio</label>
+              <div className="secret-field"><input id="alibaba-transcription-key" type={showAlibabaKey ? 'text' : 'password'} value={alibabaApiKey} onChange={(event) => setAlibabaApiKey(event.target.value)} placeholder={hasAlibabaApiKey ? 'Chave protegida — digite apenas para substituir' : 'Cole a API Key do Model Studio'} autoComplete="off" spellCheck={false} /><button type="button" aria-label={showAlibabaKey ? 'Ocultar chave Alibaba' : 'Mostrar chave Alibaba'} onClick={() => setShowAlibabaKey((value) => !value)}>{showAlibabaKey ? <EyeOff size={17} /> : <Eye size={17} />}</button></div>
+              <p className="field-help">{hasAlibabaApiKey ? 'Já há uma chave criptografada neste computador. Deixe em branco para mantê-la.' : 'A chave é criptografada neste computador e nunca é enviada à interface.'}</p>
+              <label className="settings-label" htmlFor="alibaba-workspace-host">API Host / Workspace</label>
+              <input className="settings-input" id="alibaba-workspace-host" value={alibabaWorkspaceHost} onChange={(event) => setAlibabaWorkspaceHost(event.target.value)} placeholder="ws-…ap-southeast-1.maas.aliyuncs.com" autoComplete="off" spellCheck={false} />
+              <p className="field-help">Copie o valor “API Host” da tela Quick Access. A chave e o host precisam ser da mesma região e workspace.</p>
+          </section>}
           {page === 'models' && <>
-            <div className="settings-page-heading"><div><h1>Modelos</h1><p>Escolha modelos de análise OpenAI e o provedor de transcrição.</p></div>{!(modelTask === 'transcription' && transcriptionProvider === 'alibaba') && <button className="settings-secondary" type="button" onClick={() => void loadModels()} disabled={loadingModels}>{loadingModels ? 'Buscando…' : 'Atualizar modelos'}</button>}</div>
+            <div className="settings-page-heading"><div><h1>Modelos</h1><p>Escolha os provedores e modelos para análise, chat e transcrição.</p></div>{!(modelTask === 'transcription' && transcriptionProvider === 'alibaba') && <button className="settings-secondary" type="button" onClick={() => void loadModels()} disabled={loadingModels}>{loadingModels ? 'Buscando…' : 'Atualizar modelos'}</button>}</div>
             <div className="model-task-tabs" role="tablist" aria-label="Tarefa"><button id="analysis-task-tab" type="button" role="tab" aria-controls="analysis-task-panel" aria-selected={modelTask === 'analysis'} tabIndex={modelTask === 'analysis' ? 0 : -1} className={modelTask === 'analysis' ? 'is-active' : ''} onKeyDown={moveTabFocus} onClick={() => setModelTask('analysis')}>Análise e chat</button><button id="transcription-task-tab" type="button" role="tab" aria-controls="transcription-task-panel" aria-selected={modelTask === 'transcription'} tabIndex={modelTask === 'transcription' ? 0 : -1} className={modelTask === 'transcription' ? 'is-active' : ''} onKeyDown={moveTabFocus} onClick={() => setModelTask('transcription')}>Transcrição</button><button type="button" disabled title="Tradução ainda não está disponível nesta versão">Tradução</button></div>
             {modelTask === 'analysis' ? <>
             <div id="analysis-task-panel" role="tabpanel" aria-labelledby="analysis-task-tab" tabIndex={0}>
-            <div className="model-policy-tabs" role="tablist" aria-label="Faixa de modelo">{(['economy', 'balanced', 'quality'] as const).map((policy) => <button id={`policy-${policy}-tab`} type="button" key={policy} role="tab" aria-controls="analysis-policy-panel" aria-selected={viewPolicy === policy} tabIndex={viewPolicy === policy ? 0 : -1} className={viewPolicy === policy ? 'is-active' : ''} onKeyDown={moveTabFocus} onClick={() => setViewPolicy(policy)}>{policyLabels[policy]}</button>)}</div>
-            <div id="analysis-policy-panel" role="tabpanel" aria-labelledby={`policy-${viewPolicy}-tab`} tabIndex={0}>
-            <p className="settings-section-copy">{policyDescriptions[viewPolicy]} Estimativas em USD, tabela consultada em 14/10/2026, faixa Standard e contexto curto. Ferramentas e modalidades podem ter cobrança adicional.</p>
+            <div className="model-policy-tabs analysis-providers" role="group" aria-label="Provedor de análise e chat"><button type="button" className={analysisProvider === 'openai' ? 'is-active' : ''} aria-pressed={analysisProvider === 'openai'} onClick={() => setAnalysisProvider('openai')}>OpenAI</button><button type="button" className={analysisProvider === 'alibaba' ? 'is-active' : ''} aria-pressed={analysisProvider === 'alibaba'} onClick={() => setAnalysisProvider('alibaba')}>Alibaba Cloud</button></div>
+            <div id="analysis-policy-panel" role="tabpanel" aria-labelledby="analysis-task-tab" tabIndex={0}>
+            <p className="settings-section-copy">Escolha o modelo que será usado nas perguntas, análises e reuniões. Ferramentas e modalidades podem ter cobrança adicional.</p>
             <section className="model-catalog" aria-label="Modelos disponíveis">
-              {modelOptions.length ? modelOptions.map((modelId) => <button type="button" key={modelId} className={`model-card ${policyModels[viewPolicy] === modelId ? 'is-selected' : ''}`} onClick={() => setPolicyModels((current) => ({ ...current, [viewPolicy]: modelId }))}><span className="model-icon">◎</span><span className="model-copy"><strong>{modelId}</strong><small>{modelId === policyModels[viewPolicy] ? `Selecionado para ${policyLabels[viewPolicy].toLowerCase()}` : `Modelo OpenAI · ${policyLabels[viewPolicy].toLowerCase()}`}</small><small className="model-price">{analysisModelPrice(modelId)}</small></span>{policyModels[viewPolicy] === modelId && <Check size={17} />}</button>) : <div className="model-empty"><Sparkles size={22} /><strong>{hasApiKey ? 'Carregue os modelos da sua conta' : 'Conecte a OpenAI para ver seus modelos'}</strong><span>{hasApiKey ? 'A lista reflete os modelos acessíveis por esta chave.' : 'Você pode cadastrar a chave na seção Conexão.'}</span>{hasApiKey && <button className="settings-secondary" type="button" onClick={() => void loadModels()} disabled={loadingModels}>{loadingModels ? 'Carregando…' : 'Carregar modelos'}</button>}</div>}
+              {catalogModelOptions.length ? catalogModelOptions.map((modelId) => <button type="button" key={modelId} className={`model-card ${visiblePolicyModels.balanced === modelId ? 'is-selected' : ''}`} onClick={() => chooseAnalysisModel(modelId)}><span className="model-icon">◎</span><span className="model-copy"><strong>{modelId}</strong><small>{modelId === visiblePolicyModels.balanced ? (selectedIsLegacy ? 'Selecionado · fora da lista de modelos atuais' : 'Selecionado para análise e chat') : `Modelo ${analysisProvider === 'alibaba' ? 'Alibaba Cloud' : 'OpenAI'}`}</small><small className="model-price">{analysisProvider === 'alibaba' ? 'Preço conforme tabela Model Studio' : analysisModelPrice(modelId)}</small></span>{visiblePolicyModels.balanced === modelId && <Check size={17} />}</button>) : <div className="model-empty"><Sparkles size={22} /><strong>{loadingModels ? 'Buscando modelos da sua conta…' : analysisProvider === 'alibaba' ? (hasAlibabaApiKey && alibabaWorkspaceHost ? 'Não foi possível carregar os modelos' : 'Verifique a conexão Alibaba Cloud') : (hasApiKey ? 'Não foi possível carregar os modelos' : 'Conecte a OpenAI para ver seus modelos')}</strong><span>{loadingModels ? 'A lista aparece aqui automaticamente assim que estiver pronta.' : analysisProvider === 'alibaba' ? 'Confirme a API Key e o API Host em Conexões ou tente atualizar a lista.' : (hasApiKey ? 'Confira sua conexão ou tente atualizar a lista.' : 'Você pode cadastrar uma chave na seção Conexões.')}</span>{!loadingModels && (analysisProvider === 'alibaba' ? hasAlibabaApiKey && alibabaWorkspaceHost : hasApiKey) && <button className="settings-secondary" type="button" onClick={() => void loadModels()} disabled={loadingModels}>Tentar novamente</button>}{analysisProvider === 'alibaba' && !hasAlibabaApiKey && <button className="settings-secondary" type="button" onClick={() => setPage('connection')}>Configurar API Key e Host</button>}</div>}
             </section>
             </div>
-            <section className="settings-section model-advanced"><h2>Comportamento da resposta</h2><label className="settings-label" htmlFor="max-output">Orçamento de saída <output>{maxOutputTokens.toLocaleString('pt-BR')} tokens</output></label><input id="max-output" type="range" min="200" max="8000" step="200" value={maxOutputTokens} onChange={(event) => setMaxOutputTokens(Number(event.target.value))} /><p className="field-help">O painel permite rolar respostas longas sem cortá-las. Este orçamento é enviado ao modelo; se for atingido, a resposta será marcada como incompleta. Padrão: 8.000 tokens.</p><label className="settings-label" htmlFor="default-policy">Faixa padrão<select id="default-policy" className="settings-select" value={modelPolicy} onChange={(event) => choosePolicy(event.target.value as ModelPolicy)}><option value="economy">Economia</option><option value="balanced">Equilíbrio</option><option value="quality">Qualidade</option></select></label><p className="field-help">Agentes especialistas podem usar uma faixa diferente da padrão.</p></section>
+            {analysisProvider === 'alibaba' && supportsAlibabaReasoning(selectedAlibabaModel) && <section className="settings-section alibaba-reasoning-settings" aria-labelledby="alibaba-reasoning-title">
+              <h2 id="alibaba-reasoning-title">Raciocínio do modelo Alibaba</h2>
+              <p className="settings-section-copy">Esta escolha é salva para <strong>{selectedAlibabaModel}</strong>. O modo de raciocínio controla o equilíbrio entre velocidade e profundidade nos modelos compatíveis.</p>
+              <label className="settings-label" htmlFor="alibaba-reasoning-effort">Intensidade do raciocínio
+                <select id="alibaba-reasoning-effort" className="settings-select" value={selectedAlibabaReasoning} onChange={(event) => setAlibabaReasoningEfforts((current) => ({ ...current, [selectedAlibabaModel]: event.target.value as AlibabaReasoningEffort }))}>
+                  <option value="default">Padrão do modelo</option>
+                  <option value="none">Desativado — resposta mais direta</option>
+                  <option value="low">Baixo — mais rápido</option>
+                  <option value="medium">Médio</option>
+                  <option value="xhigh">Máximo — raciocínio mais profundo</option>
+                </select>
+              </label>
+              <p className="field-help">O modo escolhido só é enviado quando este modelo suporta o parâmetro. “Padrão do modelo” mantém o comportamento atual da Alibaba.</p>
+            </section>}
             </div>
             </> : <>
               <div id="transcription-task-panel" role="tabpanel" aria-labelledby="transcription-task-tab" tabIndex={0}>
@@ -209,28 +298,41 @@ export function Settings() {
                 <button type="button" className={transcriptionProvider === 'openai' ? 'is-active' : ''} aria-pressed={transcriptionProvider === 'openai'} onClick={() => { setTranscriptionProvider('openai'); if (transcriptionModel.startsWith('qwen-')) setTranscriptionModel('gpt-4o-mini-transcribe'); }}>OpenAI</button>
                 <button type="button" className={transcriptionProvider === 'alibaba' ? 'is-active' : ''} aria-pressed={transcriptionProvider === 'alibaba'} onClick={() => { setTranscriptionProvider('alibaba'); setTranscriptionModel('qwen-audio-3.1-asr-flash-streaming'); setTranscriptionOptions(['qwen-audio-3.1-asr-flash-streaming']); }}>Alibaba Cloud</button>
               </div>
-              {transcriptionProvider === 'alibaba' && <section className="settings-section alibaba-transcription-settings" aria-label="Configuração Alibaba Cloud">
-                <h2>Alibaba Cloud Model Studio</h2>
-                <p className="settings-section-copy">A chave será criptografada pelo Windows e usada somente para a transcrição em tempo real.</p>
-                <label className="settings-label" htmlFor="alibaba-transcription-key">Chave de transcrição</label>
-                <div className="secret-field"><input id="alibaba-transcription-key" type={showAlibabaKey ? 'text' : 'password'} value={alibabaTranscriptionApiKey} onChange={(event) => setAlibabaTranscriptionApiKey(event.target.value)} placeholder={hasAlibabaTranscriptionApiKey ? 'Chave protegida — digite apenas para substituir' : 'Cole a API Key do Model Studio'} autoComplete="off" spellCheck={false} /><button type="button" aria-label={showAlibabaKey ? 'Ocultar chave Alibaba' : 'Mostrar chave Alibaba'} onClick={() => setShowAlibabaKey((value) => !value)}>{showAlibabaKey ? <EyeOff size={17} /> : <Eye size={17} />}</button></div>
-                <p className="field-help">{hasAlibabaTranscriptionApiKey ? 'Já existe uma chave protegida. Deixe em branco para mantê-la.' : 'A chave fica neste computador e não é enviada à interface.'}</p>
-                <label className="settings-label" htmlFor="alibaba-workspace-host">API Host / Workspace</label>
-                <input className="settings-input" id="alibaba-workspace-host" value={alibabaWorkspaceHost} onChange={(event) => setAlibabaWorkspaceHost(event.target.value)} placeholder="ws-…ap-southeast-1.maas.aliyuncs.com" autoComplete="off" spellCheck={false} />
-                <p className="field-help">Copie o valor “API Host” da tela Quick Access. O host deve corresponder à região da sua chave.</p>
-              </section>}
               <section className="model-catalog" aria-label="Modelos de transcrição">
-                {transcriptionProvider === 'alibaba' ? <button type="button" className={`model-card ${transcriptionModel === 'qwen-audio-3.1-asr-flash-streaming' ? 'is-selected' : ''}`} onClick={() => setTranscriptionModel('qwen-audio-3.1-asr-flash-streaming')}><span className="model-icon"><Mic size={18} /></span><span className="model-copy"><strong>Qwen-Audio-3.1-ASR</strong><small>{transcriptionModel === 'qwen-audio-3.1-asr-flash-streaming' ? 'Selecionado · transcrição em tempo real' : 'Alibaba Cloud Model Studio · streaming'}</small><small className="model-price">{alibabaTranscriptionModelPrice(alibabaWorkspaceHost)}</small></span>{transcriptionModel === 'qwen-audio-3.1-asr-flash-streaming' && <Check size={17} />}</button> : transcriptionOptions.length ? transcriptionOptions.map((modelId) => <button type="button" key={modelId} className={`model-card ${transcriptionModel === modelId ? 'is-selected' : ''}`} onClick={() => setTranscriptionModel(modelId)}><span className="model-icon"><Mic size={18} /></span><span className="model-copy"><strong>{modelId}</strong><small>{transcriptionModel === modelId ? 'Selecionado para transcrição' : 'Modelo de áudio OpenAI'}</small><small className="model-price">{transcriptionModelPrice(modelId)}</small></span>{transcriptionModel === modelId && <Check size={17} />}</button>) : <div className="model-empty"><Mic size={22} /><strong>{hasApiKey ? `Modelo atual: ${transcriptionModel}` : 'Conecte a OpenAI para listar modelos de áudio'}</strong><span>Busque os modelos disponíveis na sua conta para escolher outro.</span>{hasApiKey && <button className="settings-secondary" type="button" onClick={() => void loadModels()} disabled={loadingModels}>{loadingModels ? 'Carregando…' : 'Carregar modelos de áudio'}</button>}</div>}
+                {transcriptionProvider === 'alibaba' ? <button type="button" className={`model-card ${transcriptionModel === 'qwen-audio-3.1-asr-flash-streaming' ? 'is-selected' : ''}`} onClick={() => setTranscriptionModel('qwen-audio-3.1-asr-flash-streaming')}><span className="model-icon"><Mic size={18} /></span><span className="model-copy"><strong>Qwen-Audio-3.1-ASR</strong><small>{transcriptionModel === 'qwen-audio-3.1-asr-flash-streaming' ? 'Selecionado · transcrição em tempo real' : 'Alibaba Cloud Model Studio · streaming'}</small><small className="model-price">{alibabaTranscriptionModelPrice(alibabaWorkspaceHost)}</small></span>{transcriptionModel === 'qwen-audio-3.1-asr-flash-streaming' && <Check size={17} />}</button> : transcriptionOptions.length ? transcriptionOptions.map((modelId) => <button type="button" key={modelId} className={`model-card ${transcriptionModel === modelId ? 'is-selected' : ''}`} onClick={() => setTranscriptionModel(modelId)}><span className="model-icon"><Mic size={18} /></span><span className="model-copy"><strong>{modelId}</strong><small>{transcriptionModel === modelId ? 'Selecionado para transcrição' : 'Modelo de áudio OpenAI'}</small><small className="model-price">{transcriptionModelPrice(modelId)}</small></span>{transcriptionModel === modelId && <Check size={17} />}</button>) : <div className="model-empty"><Mic size={22} /><strong>{loadingModels ? 'Buscando modelos de áudio…' : hasApiKey ? `Modelo atual: ${transcriptionModel}` : 'Conecte a OpenAI para listar modelos de áudio'}</strong><span>{loadingModels ? 'A lista aparece aqui automaticamente assim que estiver pronta.' : 'A lista é carregada automaticamente quando você abre esta seção.'}</span>{hasApiKey && !loadingModels && <button className="settings-secondary" type="button" onClick={() => void loadModels()}>Tentar novamente</button>}</div>}
               </section>
               {transcriptionProvider === 'alibaba' && <p className="field-help">A Alibaba cobra este modelo por tokens de áudio e texto, não por minutos; o total de 30 min varia conforme o conteúdo reconhecido.</p>}
               </div>
             </>}
           </>}
 
+          {page === 'capture' && <>
+            <div className="settings-page-heading"><div><h1>Captura de tela</h1><p>Escolha qual monitor será lido ao enviar uma captura para análise.</p></div></div>
+            <section className="settings-section screen-capture-settings">
+              <h2>Monitor de captura</h2>
+              <p className="settings-section-copy">O Persona oculta o overlay antes de capturar. Selecione a tela abaixo e salve as alterações para aplicar.</p>
+              <div className="screen-source-grid" role="group" aria-label="Monitor usado para captura">
+                <button type="button" className={`screen-source-card ${captureSourceId === '' ? 'is-selected' : ''}`} aria-pressed={captureSourceId === ''} onClick={() => setCaptureSourceId('')}>
+                  <span className="screen-source-auto"><Monitor size={24} /></span>
+                  <span className="screen-source-copy"><strong>Tela atual do Persona</strong><small>Usa o monitor onde a barra estiver posicionada.</small></span>
+                  {captureSourceId === '' && <Check size={17} />}
+                </button>
+                {captureScreens.map((source) => <button key={source.id} type="button" className={`screen-source-card ${captureSourceId === source.id ? 'is-selected' : ''}`} aria-pressed={captureSourceId === source.id} onClick={() => setCaptureSourceId(source.id)}>
+                  <img src={source.dataUrl} alt={`Prévia de ${source.name}`} />
+                  <span className="screen-source-copy"><strong>{source.name || 'Monitor'}</strong><small>{source.displayId ? `Monitor · ID ${source.displayId}` : 'Monitor detectado'}</small></span>
+                  {captureSourceId === source.id && <Check size={17} />}
+                </button>)}
+              </div>
+              {loadingScreens && <p className="field-help" role="status">Detectando monitores…</p>}
+              {!loadingScreens && captureScreens.length === 0 && <div className="screen-source-empty"><Monitor size={22} /><strong>Nenhum monitor encontrado</strong><span>Verifique a conexão das telas e tente abrir esta seção novamente.</span></div>}
+              {!loadingScreens && captureSourceId && !captureScreens.some((source) => source.id === captureSourceId || source.displayId === captureSourceId) && <p className="field-help" role="status">O monitor salvo não está conectado. A captura usará a tela atual até você escolher outro.</p>}
+            </section>
+          </>}
+
           {page === 'agents' && <>
             <div className="settings-page-heading"><div><h1>Agentes especialistas</h1><p>Crie perfis para tarefas recorrentes e troque entre eles na barra do Persona.</p></div><button className="settings-primary" type="button" onClick={() => { setDraft(emptyAgent); setEditing(true); }}><Plus size={16} />Novo agente</button></div>
-            <div className="agent-layout"><div className="agent-list" aria-label="Agentes disponíveis">{profiles.map((profile) => <article key={profile.id} className={`agent-row ${profile.id === activeProfileId ? 'is-active' : ''}`}><button type="button" className="agent-select" aria-pressed={profile.id === activeProfileId} onClick={() => { setActiveProfileId(profile.id); localStorage.setItem('persona.activeProfile', profile.id); }}><span className="agent-avatar"><Bot size={17} /></span><span><strong>{profile.name}</strong><small>{policyLabels[profile.modelPolicy]} · {profile.builtIn ? 'Persona' : 'Personalizado'}</small></span>{profile.id === activeProfileId && <Check size={16} />}</button><div className="agent-row-actions">{profile.builtIn && <button type="button" onClick={() => { setDraft({ name: `${profile.name} personalizado`, instructions: profile.instructions, modelPolicy: profile.modelPolicy }); setEditing(true); }} aria-label={`Duplicar ${profile.name}`}>Duplicar</button>}{!profile.builtIn && <button type="button" disabled={busy} onClick={() => void deleteAgent(profile)} aria-label={`Excluir ${profile.name}`}><Trash2 size={14} /></button>}</div></article>)}{!profiles.length && <p className="field-help">Nenhum agente cadastrado ainda.</p>}</div>
-              <div className="agent-editor">{editing ? <form onSubmit={(event) => void saveAgent(event)}><div className="agent-editor-heading"><div><h2>{draft.id ? 'Editar agente' : 'Novo agente'}</h2><p>Defina a especialidade e o jeito de trabalhar.</p></div><button type="button" className="settings-icon-button" aria-label="Cancelar edição" onClick={() => setEditing(false)}><X size={16} /></button></div><label className="settings-label" htmlFor="agent-name">Nome<input className="settings-input" id="agent-name" value={draft.name} maxLength={60} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} placeholder="Ex.: Analista de requisitos" required /></label><label className="settings-label" htmlFor="agent-instructions">Instruções<textarea className="settings-textarea" id="agent-instructions" value={draft.instructions} maxLength={MAX_INSTRUCTIONS_LENGTH} onChange={(event) => setDraft((current) => ({ ...current, instructions: event.target.value }))} placeholder="O que este agente deve priorizar? Como deve estruturar a resposta?" required minLength={10} /><small className="field-help">{draft.instructions.length.toLocaleString('pt-BR')} / {MAX_INSTRUCTIONS_LENGTH.toLocaleString('pt-BR')} caracteres</small></label><section className="agent-documents" aria-label="Documentos de referência"><div className="agent-documents-heading"><span><strong>Documentos de contexto</strong><small>PDF ou Markdown, usados como referência junto ao prompt.</small></span><button className="settings-secondary" type="button" onClick={() => void addAgentDocuments()} disabled={(draft.knowledgeFiles?.length ?? 0) >= 5}><Paperclip size={14} />Anexar</button></div>{draft.knowledgeFiles?.length ? <ul>{draft.knowledgeFiles.map((document) => <li key={document.id}><span><strong>{document.name}</strong><small>{(document.size / 1_000_000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} MB</small></span><button type="button" aria-label={`Remover ${document.name}`} onClick={() => removeAgentDocument(document)}><X size={14} /></button></li>)}</ul> : <p>Nenhum documento anexado. Limite de 5 arquivos, 10 MB por arquivo.</p>}</section><label className="settings-label" htmlFor="agent-model-policy">Modelo preferido<select className="settings-select" id="agent-model-policy" value={draft.modelPolicy} onChange={(event) => setDraft((current) => ({ ...current, modelPolicy: event.target.value as ProfileModelPolicy }))}>{Object.entries(policyLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><button className="settings-primary" type="submit" disabled={busy}><Save size={15} />{busy ? 'Salvando…' : 'Salvar agente'}</button></form> : <div className="agent-overview"><Bot size={26} /><h2>{selectedProfile?.name ?? 'Escolha um agente'}</h2><p>{selectedProfile?.instructions ?? 'Crie um perfil de especialista para começar.'}</p><span>{selectedProfile ? `Ativo na barra · ${policyLabels[selectedProfile.modelPolicy]}` : 'Os agentes ficam salvos localmente neste dispositivo.'}</span></div>}</div></div>
+            <div className="agent-layout"><div className="agent-list" aria-label="Agentes disponíveis">{profiles.map((profile) => <article key={profile.id} className={`agent-row ${profile.id === activeProfileId ? 'is-active' : ''}`}><button type="button" className="agent-select" aria-pressed={profile.id === activeProfileId} onClick={() => { setActiveProfileId(profile.id); localStorage.setItem('persona.activeProfile', profile.id); }}><span className="agent-avatar"><Bot size={17} /></span><span><strong>{profile.name}</strong><small>{profile.builtIn ? 'Persona' : 'Personalizado'}</small></span>{profile.id === activeProfileId && <Check size={16} />}</button><div className="agent-row-actions">{profile.builtIn && <button type="button" onClick={() => { setDraft({ name: `${profile.name} personalizado`, instructions: profile.instructions, modelPolicy: profile.modelPolicy }); setEditing(true); }} aria-label={`Duplicar ${profile.name}`}>Duplicar</button>}{!profile.builtIn && <button type="button" disabled={busy} onClick={() => void deleteAgent(profile)} aria-label={`Excluir ${profile.name}`}><Trash2 size={14} /></button>}</div></article>)}{!profiles.length && <p className="field-help">Nenhum agente cadastrado ainda.</p>}</div>
+              <div className="agent-editor">{editing ? <form onSubmit={(event) => void saveAgent(event)}><div className="agent-editor-heading"><div><h2>{draft.id ? 'Editar agente' : 'Novo agente'}</h2><p>Defina a especialidade e o jeito de trabalhar.</p></div><button type="button" className="settings-icon-button" aria-label="Cancelar edição" onClick={() => setEditing(false)}><X size={16} /></button></div><label className="settings-label" htmlFor="agent-name">Nome<input className="settings-input" id="agent-name" value={draft.name} maxLength={60} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} placeholder="Ex.: Analista de requisitos" required /></label><label className="settings-label" htmlFor="agent-instructions">Instruções<textarea className="settings-textarea" id="agent-instructions" value={draft.instructions} maxLength={MAX_INSTRUCTIONS_LENGTH} onChange={(event) => setDraft((current) => ({ ...current, instructions: event.target.value }))} placeholder="O que este agente deve priorizar? Como deve estruturar a resposta?" required minLength={10} /><small className="field-help">{draft.instructions.length.toLocaleString('pt-BR')} / {MAX_INSTRUCTIONS_LENGTH.toLocaleString('pt-BR')} caracteres</small></label><section className="agent-documents" aria-label="Documentos de referência"><div className="agent-documents-heading"><span><strong>Documentos de contexto</strong><small>PDF ou Markdown, usados como referência junto ao prompt.</small></span><button className="settings-secondary" type="button" onClick={() => void addAgentDocuments()} disabled={(draft.knowledgeFiles?.length ?? 0) >= 5}><Paperclip size={14} />Anexar</button></div>{draft.knowledgeFiles?.length ? <ul>{draft.knowledgeFiles.map((document) => <li key={document.id}><span><strong>{document.name}</strong><small>{(document.size / 1_000_000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} MB</small></span><button type="button" aria-label={`Remover ${document.name}`} onClick={() => removeAgentDocument(document)}><X size={14} /></button></li>)}</ul> : <p>Nenhum documento anexado. Limite de 5 arquivos, 10 MB por arquivo.</p>}</section><button className="settings-primary" type="submit" disabled={busy}><Save size={15} />{busy ? 'Salvando…' : 'Salvar agente'}</button></form> : <div className="agent-overview"><Bot size={26} /><h2>{selectedProfile?.name ?? 'Escolha um agente'}</h2><p>{selectedProfile?.instructions ?? 'Crie um perfil de especialista para começar.'}</p><span>{selectedProfile ? 'Usa o modelo escolhido em Modelos.' : 'Os agentes ficam salvos localmente neste dispositivo.'}</span></div>}</div></div>
           </>}
 
           {page === 'privacy' && <><div className="settings-page-heading"><div><h1>Privacidade</h1><p>Controle o que a Persona guarda e como a sobreposição se comporta.</p></div></div><section className="settings-section"><label className="settings-toggle"><span><strong>Proteção durante compartilhamento</strong><small>Tenta excluir o overlay de capturas. O suporte depende do aplicativo em uso.</small></span><input type="checkbox" checked={contentProtection} onChange={(event) => setContentProtection(event.target.checked)} /><i /></label><label className="settings-toggle"><span><strong>Memória local</strong><small>Guarda perguntas e respostas localmente. Você pode consultar e apagar pela janela Contexto.</small></span><input type="checkbox" checked={historyEnabled} onChange={(event) => setHistoryEnabled(event.target.checked)} /><i /></label><div className="settings-info"><LockKeyhole size={16} /> As chaves de API são criptografadas pelo Windows. O áudio é enviado ao provedor de transcrição escolhido e não é armazenado pela Persona.</div><button className="settings-secondary" type="button" onClick={() => void window.persona.diagnostics().then((value) => setDiagnostic(value.message))}>Executar diagnóstico de privacidade</button>{diagnostic && <p className="field-help" role="status">{diagnostic}</p>}</section></>}

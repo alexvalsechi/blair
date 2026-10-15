@@ -17,6 +17,7 @@ declare global {
       onSettingsUpdated(callback: (settings: PublicSettings) => void): () => void;
       testConnection(): Promise<AskResult>;
       listModels(): Promise<string[]>;
+      listAlibabaModels(): Promise<string[]>;
       listTranscriptionModels(): Promise<string[]>;
       openSettings(): Promise<void>;
       closeSettings(): Promise<void>;

@@ -1,10 +1,12 @@
 export type PublicSettings = {
   hasApiKey: boolean;
-  hasAlibabaTranscriptionApiKey: boolean;
+  hasAlibabaApiKey: boolean;
+  analysisProvider: 'openai' | 'alibaba';
   model: string;
   transcriptionModel: string;
   transcriptionProvider: 'openai' | 'alibaba';
   alibabaWorkspaceHost: string;
+  captureSourceId: string;
   opacity: number;
   contentProtection: boolean;
   historyEnabled: boolean;
@@ -13,13 +15,18 @@ export type PublicSettings = {
   scale: number;
   modelPolicy: ModelPolicy;
   policyModels: Record<ModelPolicy, string>;
-  maxOutputTokens: number;
+  alibabaPolicyModels: Record<ModelPolicy, string>;
+  alibabaReasoningEfforts: Record<string, AlibabaReasoningEffort>;
 };
+
+export type AlibabaReasoningEffort = 'default' | 'none' | 'low' | 'medium' | 'xhigh';
 
 export type SaveSettingsInput = {
   apiKey?: string;
-  alibabaTranscriptionApiKey?: string;
+  alibabaApiKey?: string;
   alibabaWorkspaceHost?: string;
+  captureSourceId?: string;
+  analysisProvider?: 'openai' | 'alibaba';
   model: string;
   transcriptionModel?: string;
   transcriptionProvider?: 'openai' | 'alibaba';
@@ -30,7 +37,8 @@ export type SaveSettingsInput = {
   scale?: number;
   modelPolicy?: ModelPolicy;
   policyModels?: Partial<Record<ModelPolicy, string>>;
-  maxOutputTokens?: number;
+  alibabaPolicyModels?: Partial<Record<ModelPolicy, string>>;
+  alibabaReasoningEfforts?: Record<string, AlibabaReasoningEffort>;
 };
 
 export type ModelPolicy = 'economy' | 'balanced' | 'quality';
@@ -74,6 +82,7 @@ export type MemoryContext = {
 export type CaptureSource = {
   id: string;
   name: string;
+  displayId?: string;
   dataUrl: string;
   kind: 'screen' | 'window';
 };

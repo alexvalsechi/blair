@@ -1,7 +1,7 @@
 import { Bot, Check, Download, Edit3, FileJson, GripVertical, History, Plus, Search, Trash2, X } from 'lucide-react';
 import { FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { MAX_INSTRUCTIONS_LENGTH } from '../../electron/contracts';
-import type { AssistantProfile, HistoryEntry, MemoryContext, ProfileModelPolicy, SaveAssistantProfileInput } from '../../electron/contracts';
+import type { AssistantProfile, HistoryEntry, MemoryContext, SaveAssistantProfileInput } from '../../electron/contracts';
 import { errorMessage } from '../lib/errors';
 import { useDragPosition } from '../lib/useDragPosition';
 
@@ -16,7 +16,6 @@ type Props = {
 };
 
 const emptyProfile: SaveAssistantProfileInput = { name: '', instructions: '', modelPolicy: 'default' };
-const policyLabels: Record<ProfileModelPolicy, string> = { default: 'Padrão global', economy: 'Economia', balanced: 'Equilíbrio', quality: 'Qualidade' };
 
 export function ContextPanel(props: Props) {
   const [tab, setTab] = useState<'profiles' | 'memory'>('profiles');
@@ -112,7 +111,7 @@ export function ContextPanel(props: Props) {
       <section ref={panelRef} className="context-panel glass-surface" style={{ ['--drag-x' as string]: `${panelDrag.offset.x}px`, ['--drag-y' as string]: `${panelDrag.offset.y}px` }} role="dialog" aria-modal="true" aria-labelledby="context-title">
         <header className="context-header">
           <div className="context-heading-copy">
-            <h2 id="context-title" className="drag-grip" tabIndex={0} onMouseDown={panelDrag.startDrag} onKeyDown={(event) => {
+            <h2 id="context-title" className="drag-grip" tabIndex={0} onPointerDown={panelDrag.startDrag} onKeyDown={(event) => {
               const distance = event.shiftKey ? 30 : 10;
               if (event.key === 'ArrowLeft') panelDrag.moveBy(-distance, 0);
               else if (event.key === 'ArrowRight') panelDrag.moveBy(distance, 0);
@@ -135,7 +134,7 @@ export function ContextPanel(props: Props) {
             <div className="profile-list" aria-label="Perfis de assistente">
               {props.profiles.map((profile) => (
                 <div key={profile.id} className={`profile-row ${props.activeProfileId === profile.id ? 'is-active' : ''}`}>
-                  <button type="button" aria-pressed={props.activeProfileId === profile.id} onClick={() => props.onActiveProfileChange(profile.id)}><span className="profile-avatar">{profile.name.slice(0, 1).toUpperCase()}</span><span><strong>{profile.name}</strong><small>{policyLabels[profile.modelPolicy]} · {profile.builtIn ? 'Padrão' : 'Personalizado'}</small></span>{props.activeProfileId === profile.id && <Check size={16} />}</button>
+                  <button type="button" aria-pressed={props.activeProfileId === profile.id} onClick={() => props.onActiveProfileChange(profile.id)}><span className="profile-avatar">{profile.name.slice(0, 1).toUpperCase()}</span><span><strong>{profile.name}</strong><small>{profile.builtIn ? 'Padrão' : 'Personalizado'}</small></span>{props.activeProfileId === profile.id && <Check size={16} />}</button>
                   {!profile.builtIn && <span className="profile-tools"><button type="button" aria-label={`Editar ${profile.name}`} onClick={() => startEdit(profile)}><Edit3 size={14} /></button><button type="button" aria-label={`Excluir ${profile.name}`} onClick={() => void removeProfile(profile)}><Trash2 size={14} /></button></span>}
                 </div>
               ))}
@@ -147,7 +146,6 @@ export function ContextPanel(props: Props) {
                   <div className="profile-form-heading"><h3>{draft.id ? 'Editar assistente' : 'Novo assistente'}</h3><button className="icon-button" type="button" aria-label="Cancelar edição" onClick={() => setEditing(false)}><X size={16} /></button></div>
                   <label>Nome<input value={draft.name} maxLength={60} onChange={(event) => setDraft((value) => ({ ...value, name: event.target.value }))} placeholder="Ex.: Revisor técnico" required /></label>
                   <label>Instruções<textarea value={draft.instructions} maxLength={MAX_INSTRUCTIONS_LENGTH} onChange={(event) => setDraft((value) => ({ ...value, instructions: event.target.value }))} placeholder="Como este assistente deve analisar e responder?" required /><small className="field-help">{draft.instructions.length.toLocaleString('pt-BR')} / {MAX_INSTRUCTIONS_LENGTH.toLocaleString('pt-BR')} caracteres</small></label>
-                  <label>Política de modelo<select value={draft.modelPolicy} onChange={(event) => setDraft((value) => ({ ...value, modelPolicy: event.target.value as ProfileModelPolicy }))}>{Object.entries(policyLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
                   <button className="meeting-primary" type="submit" disabled={busy}>{busy ? 'Salvando…' : 'Salvar assistente'}</button>
                 </form>
               ) : (

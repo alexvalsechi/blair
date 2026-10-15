@@ -1,16 +1,19 @@
 import { app, safeStorage } from 'electron';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { ModelPolicy, PublicSettings, SaveSettingsInput, ShortcutAction } from './contracts.js';
-import { clampMaxOutputTokens, clampOpacity, DEFAULT_MAX_OUTPUT_TOKENS, normalizeModel, normalizeModelPolicy } from './validation.js';
+import type { AlibabaReasoningEffort, ModelPolicy, PublicSettings, SaveSettingsInput, ShortcutAction } from './contracts.js';
+import { clampOpacity, normalizeAlibabaReasoningEfforts, normalizeModel, normalizeModelPolicy } from './validation.js';
 
 type StoredSettings = {
   encryptedApiKey?: string;
+  encryptedAlibabaApiKey?: string;
   encryptedAlibabaTranscriptionApiKey?: string;
   model: string;
+  analysisProvider: 'openai' | 'alibaba';
   transcriptionModel: string;
   transcriptionProvider: 'openai' | 'alibaba';
   alibabaWorkspaceHost: string;
+  captureSourceId: string;
   opacity: number;
   contentProtection: boolean;
   historyEnabled: boolean;
@@ -19,7 +22,8 @@ type StoredSettings = {
   scale: number;
   modelPolicy: ModelPolicy;
   policyModels: Record<ModelPolicy, string>;
-  maxOutputTokens: number;
+  alibabaPolicyModels: Record<ModelPolicy, string>;
+  alibabaReasoningEfforts: Record<string, AlibabaReasoningEffort>;
 };
 
 export const defaultShortcuts: Record<ShortcutAction, string> = {
@@ -31,9 +35,11 @@ export const defaultShortcuts: Record<ShortcutAction, string> = {
 
 const defaults: StoredSettings = {
   model: 'gpt-5.5',
+  analysisProvider: 'openai',
   transcriptionModel: 'gpt-4o-mini-transcribe',
   transcriptionProvider: 'openai',
   alibabaWorkspaceHost: '',
+  captureSourceId: '',
   opacity: 0.86,
   contentProtection: true,
   historyEnabled: false,
@@ -42,27 +48,28 @@ const defaults: StoredSettings = {
   scale: 1,
   modelPolicy: 'balanced',
   policyModels: { economy: 'gpt-5.5', balanced: 'gpt-5.5', quality: 'gpt-5.5' },
-  maxOutputTokens: DEFAULT_MAX_OUTPUT_TOKENS,
+  alibabaPolicyModels: { economy: 'qwen-turbo', balanced: 'qwen-plus', quality: 'qwen-max' },
+  alibabaReasoningEfforts: {},
 };
-const LEGACY_DEFAULT_MAX_OUTPUT_TOKENS = 1200;
 
 const settingsPath = () => path.join(app.getPath('userData'), 'settings.json');
 
 async function readStored(): Promise<StoredSettings> {
   try {
-    const parsed = JSON.parse(await readFile(settingsPath(), 'utf8')) as Partial<StoredSettings>;
+    const parsed = JSON.parse(await readFile(settingsPath(), 'utf8')) as Partial<StoredSettings> & { maxOutputTokens?: unknown; captureDisplayId?: string };
+    delete parsed.maxOutputTokens;
     return {
       ...defaults,
       ...parsed,
+      encryptedAlibabaApiKey: parsed.encryptedAlibabaApiKey ?? parsed.encryptedAlibabaTranscriptionApiKey,
       shortcuts: { ...defaultShortcuts, ...(parsed.shortcuts ?? {}) },
       opacity: clampOpacity(parsed.opacity ?? defaults.opacity),
       scale: Math.min(1.2, Math.max(0.8, parsed.scale ?? defaults.scale)),
+      captureSourceId: normalizeCaptureSourceId(parsed.captureSourceId ?? parsed.captureDisplayId ?? defaults.captureSourceId),
       policyModels: { ...defaults.policyModels, balanced: parsed.model ?? defaults.policyModels.balanced, ...(parsed.policyModels ?? {}) },
+      alibabaPolicyModels: { ...defaults.alibabaPolicyModels, ...(parsed.alibabaPolicyModels ?? {}) },
+      alibabaReasoningEfforts: normalizeAlibabaReasoningEfforts(parsed.alibabaReasoningEfforts),
       modelPolicy: normalizeModelPolicy(parsed.modelPolicy ?? defaults.modelPolicy),
-      // 1,200 was the old application default and cut off many normal long answers.
-      maxOutputTokens: clampMaxOutputTokens(parsed.maxOutputTokens === LEGACY_DEFAULT_MAX_OUTPUT_TOKENS
-        ? DEFAULT_MAX_OUTPUT_TOKENS
-        : parsed.maxOutputTokens ?? defaults.maxOutputTokens),
     };
   } catch {
     return { ...defaults };
@@ -78,11 +85,13 @@ export async function getPublicSettings(): Promise<PublicSettings> {
   const stored = await readStored();
   return {
     hasApiKey: Boolean(stored.encryptedApiKey),
-    hasAlibabaTranscriptionApiKey: Boolean(stored.encryptedAlibabaTranscriptionApiKey),
+    hasAlibabaApiKey: Boolean(stored.encryptedAlibabaApiKey),
+    analysisProvider: stored.analysisProvider,
     model: stored.model,
     transcriptionModel: stored.transcriptionModel,
     transcriptionProvider: stored.transcriptionProvider,
     alibabaWorkspaceHost: stored.alibabaWorkspaceHost,
+    captureSourceId: stored.captureSourceId,
     opacity: stored.opacity,
     contentProtection: stored.contentProtection,
     historyEnabled: stored.historyEnabled,
@@ -91,7 +100,8 @@ export async function getPublicSettings(): Promise<PublicSettings> {
     scale: stored.scale,
     modelPolicy: stored.modelPolicy,
     policyModels: stored.policyModels,
-    maxOutputTokens: stored.maxOutputTokens,
+    alibabaPolicyModels: stored.alibabaPolicyModels,
+    alibabaReasoningEfforts: stored.alibabaReasoningEfforts,
   };
 }
 
@@ -100,9 +110,11 @@ export async function saveSettings(input: SaveSettingsInput): Promise<PublicSett
   const next: StoredSettings = {
     ...stored,
     model: normalizeModel(input.model),
+    analysisProvider: input.analysisProvider ?? stored.analysisProvider,
     transcriptionModel: normalizeModel(input.transcriptionModel ?? stored.transcriptionModel),
     transcriptionProvider: input.transcriptionProvider ?? stored.transcriptionProvider,
     alibabaWorkspaceHost: normalizeAlibabaWorkspaceHost(input.alibabaWorkspaceHost ?? stored.alibabaWorkspaceHost),
+    captureSourceId: normalizeCaptureSourceId(input.captureSourceId ?? stored.captureSourceId),
     contentProtection: Boolean(input.contentProtection),
     historyEnabled: input.historyEnabled ?? stored.historyEnabled,
     shortcuts: { ...stored.shortcuts, ...(input.shortcuts ?? {}) },
@@ -114,7 +126,12 @@ export async function saveSettings(input: SaveSettingsInput): Promise<PublicSett
       balanced: normalizeModel(input.policyModels?.balanced ?? input.model ?? stored.policyModels.balanced),
       quality: normalizeModel(input.policyModels?.quality ?? stored.policyModels.quality),
     },
-    maxOutputTokens: clampMaxOutputTokens(input.maxOutputTokens ?? stored.maxOutputTokens),
+    alibabaPolicyModels: {
+      economy: normalizeModel(input.alibabaPolicyModels?.economy ?? stored.alibabaPolicyModels.economy),
+      balanced: normalizeModel(input.alibabaPolicyModels?.balanced ?? stored.alibabaPolicyModels.balanced),
+      quality: normalizeModel(input.alibabaPolicyModels?.quality ?? stored.alibabaPolicyModels.quality),
+    },
+    alibabaReasoningEfforts: normalizeAlibabaReasoningEfforts(input.alibabaReasoningEfforts ?? stored.alibabaReasoningEfforts),
   };
 
   if (input.apiKey?.trim()) {
@@ -124,15 +141,24 @@ export async function saveSettings(input: SaveSettingsInput): Promise<PublicSett
     next.encryptedApiKey = safeStorage.encryptString(input.apiKey.trim()).toString('base64');
   }
 
-  if (input.alibabaTranscriptionApiKey?.trim()) {
+  if (input.alibabaApiKey?.trim()) {
     if (!safeStorage.isEncryptionAvailable()) {
       throw new Error('A proteÃ§Ã£o de credenciais do Windows nÃ£o estÃ¡ disponÃ­vel. A chave Alibaba nÃ£o foi salva.');
     }
-    next.encryptedAlibabaTranscriptionApiKey = safeStorage.encryptString(input.alibabaTranscriptionApiKey.trim()).toString('base64');
+    next.encryptedAlibabaApiKey = safeStorage.encryptString(input.alibabaApiKey.trim()).toString('base64');
+    next.encryptedAlibabaTranscriptionApiKey = undefined;
   }
 
   await writeStored(next);
   return getPublicSettings();
+}
+
+function normalizeCaptureSourceId(value: string): string {
+  const id = value.trim();
+  if (!id) return '';
+  // Keep accepting the old numeric Display.id value so settings migrate safely.
+  if (!/^\d{1,20}$/.test(id) && !/^screen:[^:]+:\d+$/.test(id)) throw new Error('Selecione um monitor válido para captura.');
+  return id;
 }
 
 function normalizeAlibabaWorkspaceHost(value: string): string {
@@ -144,8 +170,8 @@ function normalizeAlibabaWorkspaceHost(value: string): string {
   } catch {
     throw new Error('Informe um API Host válido do Alibaba Model Studio.');
   }
-  if (!/^ws-[a-z0-9-]+\.(?:ap-southeast-1|cn-beijing)\.maas\.aliyuncs\.com$/i.test(host)) {
-    throw new Error('Informe o API Host da Alibaba no formato ws-…ap-southeast-1.maas.aliyuncs.com ou ws-…cn-beijing.maas.aliyuncs.com.');
+  if (!/^ws-[a-z0-9-]+\.(?:ap-southeast-1|cn-beijing|cn-hongkong|eu-central-1|ap-northeast-1|us-east-1)\.maas\.aliyuncs\.com$/i.test(host)) {
+    throw new Error('Informe o API Host de um workspace Alibaba Model Studio válido.');
   }
   return host.toLowerCase();
 }
@@ -168,14 +194,14 @@ export async function readApiKey(): Promise<string> {
   return safeStorage.decryptString(Buffer.from(stored.encryptedApiKey, 'base64'));
 }
 
-export async function readAlibabaTranscriptionApiKey(): Promise<string> {
+export async function readAlibabaApiKey(): Promise<string> {
   const stored = await readStored();
-  if (!stored.encryptedAlibabaTranscriptionApiKey) {
+  if (!stored.encryptedAlibabaApiKey) {
     throw new Error('Configure a chave de transcriÃ§Ã£o da Alibaba Cloud na tela Modelos.');
   }
   if (!safeStorage.isEncryptionAvailable()) {
     throw new Error('O Windows nÃ£o disponibilizou a proteÃ§Ã£o necessÃ¡ria para ler a chave Alibaba.');
   }
-  return safeStorage.decryptString(Buffer.from(stored.encryptedAlibabaTranscriptionApiKey, 'base64'));
+  return safeStorage.decryptString(Buffer.from(stored.encryptedAlibabaApiKey, 'base64'));
 }
 
