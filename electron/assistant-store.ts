@@ -19,12 +19,25 @@ const specialists: AssistantProfile[] = [
 ];
 
 const filePath = () => path.join(app.getPath('userData'), 'assistants.json');
+const baseProfiles = [...builtIns, ...specialists];
+
+async function readSavedProfiles(): Promise<AssistantProfile[]> {
+  try {
+    const saved = JSON.parse(await readFile(filePath(), 'utf8')) as unknown;
+    return Array.isArray(saved) ? saved as AssistantProfile[] : [];
+  } catch { return []; }
+}
 
 export async function listProfiles(): Promise<AssistantProfile[]> {
-  try {
-    const custom = JSON.parse(await readFile(filePath(), 'utf8')) as AssistantProfile[];
-    return [...builtIns, ...specialists, ...custom.filter((item) => !item.builtIn)];
-  } catch { return [...builtIns, ...specialists]; }
+  const saved = await readSavedProfiles();
+  const savedById = new Map(saved.map((profile) => [profile.id, profile]));
+  const baseIds = new Set(baseProfiles.map((profile) => profile.id));
+  const defaults = baseProfiles.map((profile) => {
+    const override = savedById.get(profile.id);
+    return override?.builtIn ? { ...profile, ...override, builtIn: true } : profile;
+  });
+  const custom = saved.filter((profile) => !profile.builtIn && !baseIds.has(profile.id));
+  return [...defaults, ...custom];
 }
 
 export async function getProfile(id?: string): Promise<AssistantProfile> {
@@ -53,17 +66,16 @@ export async function saveProfile(input: SaveAssistantProfileInput): Promise<Ass
   if (totalDocumentSize > 20_000_000) throw new Error('Os documentos do agente podem somar até 20 MB.');
   const profiles = await listProfiles();
   const existing = input.id ? profiles.find((item) => item.id === input.id) : undefined;
-  if (existing?.builtIn) throw new Error('Perfis padrão não podem ser alterados. Duplique-o em um novo perfil.');
   const timestamp = now();
   const saved: AssistantProfile = {
     id: existing?.id ?? randomUUID(), name, instructions, knowledgeFiles,
-    modelPolicy: input.modelPolicy === 'default' ? 'default' : normalizeModelPolicy(input.modelPolicy), builtIn: false,
+    modelPolicy: input.modelPolicy === 'default' ? 'default' : normalizeModelPolicy(input.modelPolicy), builtIn: existing?.builtIn ?? false,
     createdAt: existing?.createdAt ?? timestamp, updatedAt: timestamp,
   };
-  const custom = profiles.filter((item) => !item.builtIn && item.id !== saved.id);
-  custom.push(saved);
+  const persisted = (await readSavedProfiles()).filter((item) => item.id !== saved.id);
+  persisted.push(saved);
   await mkdir(path.dirname(filePath()), { recursive: true });
-  await writeFile(filePath(), JSON.stringify(custom, null, 2), 'utf8');
+  await writeFile(filePath(), JSON.stringify(persisted, null, 2), 'utf8');
   return saved;
 }
 
@@ -71,6 +83,7 @@ export async function deleteProfile(id: string): Promise<void> {
   const profiles = await listProfiles();
   const target = profiles.find((item) => item.id === id);
   if (!target || target.builtIn) throw new Error('Este perfil não pode ser excluído.');
-  const custom = profiles.filter((item) => !item.builtIn && item.id !== id);
-  await writeFile(filePath(), JSON.stringify(custom, null, 2), 'utf8');
+  const persisted = (await readSavedProfiles()).filter((item) => item.id !== id);
+  await mkdir(path.dirname(filePath()), { recursive: true });
+  await writeFile(filePath(), JSON.stringify(persisted, null, 2), 'utf8');
 }

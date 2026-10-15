@@ -49,7 +49,8 @@ const activeRequests = new Map<number, AbortController>();
 async function assistantExecution(input: AskInput) {
   const settings = await getPublicSettings();
   const profile = await getProfile(input.profileId);
-  const model = (settings.analysisProvider === 'alibaba' ? settings.alibabaPolicyModels.balanced : settings.policyModels.balanced) || settings.model;
+  const modelPolicy = profile.modelPolicy === 'default' ? settings.modelPolicy : profile.modelPolicy;
+  const model = (settings.analysisProvider === 'alibaba' ? settings.alibabaPolicyModels[modelPolicy] : settings.policyModels[modelPolicy]) || settings.model;
   const configuredReasoning = settings.alibabaReasoningEfforts[model] ?? 'default';
   return {
     settings,
