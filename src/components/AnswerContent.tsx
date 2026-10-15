@@ -114,6 +114,10 @@ function splitAnswer(text: string): AnswerPart[] {
   return parts;
 }
 
+function normalizeD2Source(source: string): string {
+  return source.replace(/^(\s*style\.(?:stroke|fill):\s*)(#[\da-f]{3,8})(\s*(?:#.*)?)$/gim, '$1"$2"$3');
+}
+
 function D2Diagram({ source }: { source: string }) {
   const [svgMarkup, setSvgMarkup] = useState('');
   const [error, setError] = useState('');
@@ -126,9 +130,10 @@ function D2Diagram({ source }: { source: string }) {
     void (async () => {
       try {
         if (source.length > 20_000) throw new Error('O bloco D2 excede o limite de 20 mil caracteres.');
+        const renderSource = normalizeD2Source(source);
         const rendered = await withRenderer(async (renderer) => {
           const compiled = await renderer.compile({
-            fs: { index: source },
+            fs: { index: renderSource },
             options: { sketch: true, center: true, pad: 12 },
           });
           if (!active) return null;
