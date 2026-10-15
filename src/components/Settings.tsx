@@ -133,6 +133,13 @@ export function Settings() {
     finally { setBusy(false); }
   };
 
+  const selectCaptureScreen = (captureSourceId: string) => {
+    setCaptureSourceId(captureSourceId);
+    void window.persona.moveOverlayToDisplay(captureSourceId)
+      .catch((error) => setNotice({ tone: 'error', text: errorMessage(error) }));
+  };
+  const isCaptureScreenSelected = (source: CaptureSource) => captureSourceId === source.id || captureSourceId === source.displayId;
+
   const loadModels = async () => {
     if (modelTask === 'transcription' && transcriptionProvider === 'alibaba') {
       setTranscriptionOptions(['qwen-audio-3.1-asr-flash-streaming']);
@@ -310,17 +317,17 @@ export function Settings() {
             <div className="settings-page-heading"><div><h1>Captura de tela</h1><p>Escolha qual monitor será lido ao enviar uma captura para análise.</p></div></div>
             <section className="settings-section screen-capture-settings">
               <h2>Monitor de captura</h2>
-              <p className="settings-section-copy">O Persona oculta o overlay antes de capturar. Selecione a tela abaixo e salve as alterações para aplicar.</p>
+              <p className="settings-section-copy">Selecione uma tela para mover as barras do overlay imediatamente. Salve as alterações para manter essa escolha nas próximas sessões.</p>
               <div className="screen-source-grid" role="group" aria-label="Monitor usado para captura">
-                <button type="button" className={`screen-source-card ${captureSourceId === '' ? 'is-selected' : ''}`} aria-pressed={captureSourceId === ''} onClick={() => setCaptureSourceId('')}>
+                <button type="button" className={`screen-source-card ${captureSourceId === '' ? 'is-selected' : ''}`} aria-pressed={captureSourceId === ''} onClick={() => selectCaptureScreen('')}>
                   <span className="screen-source-auto"><Monitor size={24} /></span>
                   <span className="screen-source-copy"><strong>Tela atual do Persona</strong><small>Usa o monitor onde a barra estiver posicionada.</small></span>
                   {captureSourceId === '' && <Check size={17} />}
                 </button>
-                {captureScreens.map((source) => <button key={source.id} type="button" className={`screen-source-card ${captureSourceId === source.id ? 'is-selected' : ''}`} aria-pressed={captureSourceId === source.id} onClick={() => setCaptureSourceId(source.id)}>
+                {captureScreens.map((source) => <button key={source.id} type="button" className={`screen-source-card ${isCaptureScreenSelected(source) ? 'is-selected' : ''}`} aria-pressed={isCaptureScreenSelected(source)} onClick={() => selectCaptureScreen(source.displayId || source.id)}>
                   <img src={source.dataUrl} alt={`Prévia de ${source.name}`} />
                   <span className="screen-source-copy"><strong>{source.name || 'Monitor'}</strong><small>{source.displayId ? `Monitor · ID ${source.displayId}` : 'Monitor detectado'}</small></span>
-                  {captureSourceId === source.id && <Check size={17} />}
+                  {isCaptureScreenSelected(source) && <Check size={17} />}
                 </button>)}
               </div>
               {loadingScreens && <p className="field-help" role="status">Detectando monitores…</p>}

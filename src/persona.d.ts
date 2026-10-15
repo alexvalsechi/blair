@@ -21,6 +21,7 @@ declare global {
       listTranscriptionModels(): Promise<string[]>;
       openSettings(): Promise<void>;
       closeSettings(): Promise<void>;
+      moveOverlayToDisplay(captureSourceId: string): Promise<void>;
       listCaptureSources(): Promise<CaptureSource[]>;
       getOverlayAudioSource(): Promise<OverlayAudioSource | null>;
       captureOverlayScreen(): Promise<CaptureSource | null>;

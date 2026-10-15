@@ -87,14 +87,26 @@ export function Overlay() {
       });
       window.persona.setInteractiveRegions(regions);
     };
+    let animationFrame = 0;
+    const schedulePublish = () => {
+      cancelAnimationFrame(animationFrame);
+      animationFrame = requestAnimationFrame(() => {
+        animationFrame = requestAnimationFrame(publishInteractiveRegions);
+      });
+    };
     publishInteractiveRegions();
-    const observer = new ResizeObserver(publishInteractiveRegions);
+    schedulePublish();
+    void document.fonts.ready.then(schedulePublish);
+    const observer = new ResizeObserver(schedulePublish);
     observer.observe(document.documentElement);
     document.querySelectorAll<HTMLElement>('[data-interactive]').forEach((element) => observer.observe(element));
-    window.addEventListener('resize', publishInteractiveRegions);
+    window.addEventListener('resize', schedulePublish);
+    window.addEventListener('load', schedulePublish);
     return () => {
       observer.disconnect();
-      window.removeEventListener('resize', publishInteractiveRegions);
+      cancelAnimationFrame(animationFrame);
+      window.removeEventListener('resize', schedulePublish);
+      window.removeEventListener('load', schedulePublish);
       window.persona.setInteractiveRegions([]);
     };
   }, [promptOpen, answerOpen, dockVisible, meetingOpen, contextOpen, agentMenuOpen, attachments.length, selectedMemory.length, promptDrag.offset.x, promptDrag.offset.y, answerDrag.offset.x, answerDrag.offset.y, dockDrag.offset.x, dockDrag.offset.y]);

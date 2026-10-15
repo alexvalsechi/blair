@@ -113,6 +113,15 @@ function getVirtualScreenBounds() {
   return { x: left, y: top, width: right - left, height: bottom - top };
 }
 
+function getOverlayBounds(captureSourceId: string) {
+  if (!captureSourceId) return getVirtualScreenBounds();
+  const sourceDisplayId = captureSourceId.match(/^screen:(.+):\d+$/)?.[1];
+  const display = screen.getAllDisplays().find((item) =>
+    String(item.id) === captureSourceId || (sourceDisplayId !== undefined && String(item.id) === sourceDisplayId),
+  );
+  return display?.bounds ?? getVirtualScreenBounds();
+}
+
 function createOverlayWindow(): BrowserWindow {
   const bounds = getVirtualScreenBounds();
   const win = new BrowserWindow({
@@ -254,6 +263,7 @@ function registerIpc(): void {
   ipcMain.handle('settings:get', () => getPublicSettings());
   ipcMain.handle('settings:save', async (_event, input: SaveSettingsInput) => {
     const saved = await saveSettings(input);
+    overlayWindow?.setBounds(getOverlayBounds(saved.captureSourceId));
     overlayWindow?.setOpacity(saved.opacity);
     overlayWindow?.setContentProtection(saved.contentProtection);
     registerShortcuts(saved.shortcuts);
@@ -280,6 +290,10 @@ function registerIpc(): void {
   });
   ipcMain.handle('window:open-settings', () => showSettings());
   ipcMain.handle('window:close-settings', () => settingsWindow?.close());
+  ipcMain.handle('overlay:move-to-display', (_event, captureSourceId: string) => {
+    if (!overlayWindow || overlayWindow.isDestroyed()) return;
+    overlayWindow.setBounds(getOverlayBounds(captureSourceId));
+  });
   ipcMain.handle('capture:list-sources', async () => {
     const largest = screen.getAllDisplays().reduce(
       (size, display) => ({
@@ -520,8 +534,10 @@ app.whenReady().then(async () => {
     app.quit();
     return;
   }
-  const refreshOverlayBounds = () => {
-    if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.setBounds(getVirtualScreenBounds());
+  const refreshOverlayBounds = async () => {
+    if (!overlayWindow || overlayWindow.isDestroyed()) return;
+    const settings = await getPublicSettings();
+    if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.setBounds(getOverlayBounds(settings.captureSourceId));
   };
   screen.on('display-added', refreshOverlayBounds);
   screen.on('display-removed', refreshOverlayBounds);
@@ -539,6 +555,7 @@ app.whenReady().then(async () => {
     callback(permission === 'media' && webContents === overlayWindow?.webContents);
   });
   const settings = await getPublicSettings();
+  overlayWindow.setBounds(getOverlayBounds(settings.captureSourceId));
   registerShortcuts(settings.shortcuts);
   if (!settings.hasApiKey) showSettings();
 });

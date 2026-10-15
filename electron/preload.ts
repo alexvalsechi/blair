@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld('persona', {
   listTranscriptionModels: (): Promise<string[]> => ipcRenderer.invoke('models:transcription-list'),
   openSettings: (): Promise<void> => ipcRenderer.invoke('window:open-settings'),
   closeSettings: (): Promise<void> => ipcRenderer.invoke('window:close-settings'),
+  moveOverlayToDisplay: (captureSourceId: string): Promise<void> => ipcRenderer.invoke('overlay:move-to-display', captureSourceId),
   listCaptureSources: (): Promise<CaptureSource[]> => ipcRenderer.invoke('capture:list-sources'),
   getOverlayAudioSource: (): Promise<OverlayAudioSource | null> => ipcRenderer.invoke('capture:get-overlay-audio-source'),
   captureOverlayScreen: (): Promise<CaptureSource | null> => ipcRenderer.invoke('capture:overlay-screen'),
