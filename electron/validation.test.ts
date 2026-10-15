@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clampMaxOutputTokens, clampOpacity, isResponseModelId, normalizeModel, normalizeModelPolicy, resolveProfilePolicy } from './validation.js';
+import { clampMaxOutputTokens, clampOpacity, DEFAULT_MAX_OUTPUT_TOKENS, isResponseModelId, normalizeModel, normalizeModelPolicy, resolveProfilePolicy } from './validation.js';
 
 describe('clampOpacity', () => {
   it('mantém a opacidade dentro do intervalo legível', () => {
@@ -33,7 +33,8 @@ describe('política de modelos', () => {
     expect(clampMaxOutputTokens(50)).toBe(200);
     expect(clampMaxOutputTokens(1_234.6)).toBe(1235);
     expect(clampMaxOutputTokens(20_000)).toBe(8000);
-    expect(clampMaxOutputTokens(Number.NaN)).toBe(1200);
+    expect(clampMaxOutputTokens(Number.NaN)).toBe(DEFAULT_MAX_OUTPUT_TOKENS);
+    expect(DEFAULT_MAX_OUTPUT_TOKENS).toBe(8000);
   });
 
   it('herda a política global quando o perfil usa o padrão', () => {

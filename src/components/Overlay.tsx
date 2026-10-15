@@ -55,6 +55,10 @@ export function Overlay() {
   const [interactionMode, setInteractionMode] = useState(false);
   const [answer, setAnswer] = useState<AnswerState>(initialAnswer);
   const [answerHistory, setAnswerHistory] = useState<AnswerHistoryItem[]>([]);
+  const answerCopyRef = useRef<HTMLDivElement>(null);
+  const followAnswerRef = useRef(true);
+  const streamTextRef = useRef('');
+  const streamFlushTimerRef = useRef<number | null>(null);
   const [responseTab, setResponseTab] = useState<ResponseTab>('answers');
   const [isCapturing, setIsCapturing] = useState(false);
   const captureInFlight = useRef(false);
@@ -128,12 +132,50 @@ export function Overlay() {
     };
   }, [agentMenuOpen]);
 
-  useEffect(() => window.persona.onStream((event: StreamEvent) => {
-    if (event.type === 'delta') setAnswer((current) => ({ status: 'loading', text: current.text + event.text }));
-    if (event.type === 'done') setAnswer((current) => ({ status: 'success', text: current.text, requestId: event.requestId }));
-    if (event.type === 'cancelled') setAnswer((current) => ({ status: 'success', text: current.text || 'Solicitação cancelada.' }));
-    if (event.type === 'error') setAnswer({ status: 'error', text: event.message });
-  }), []);
+  useEffect(() => {
+    const unsubscribe = window.persona.onStream((event: StreamEvent) => {
+      if (event.type === 'delta') {
+        streamTextRef.current += event.text;
+        if (streamFlushTimerRef.current === null) {
+          streamFlushTimerRef.current = window.setTimeout(() => {
+            streamFlushTimerRef.current = null;
+            setAnswer((current) => current.status === 'loading' ? { status: 'loading', text: streamTextRef.current } : current);
+          }, 80);
+        }
+      }
+      if (event.type === 'done') {
+        if (streamFlushTimerRef.current !== null) window.clearTimeout(streamFlushTimerRef.current);
+        streamFlushTimerRef.current = null;
+        setAnswer({ status: 'success', text: streamTextRef.current, requestId: event.requestId });
+      }
+      if (event.type === 'incomplete') {
+        if (streamFlushTimerRef.current !== null) window.clearTimeout(streamFlushTimerRef.current);
+        streamFlushTimerRef.current = null;
+        const notice = `\n\n---\n\n> **Resposta incompleta:** ${event.message}`;
+        setAnswer({ status: 'success', text: `${streamTextRef.current}${notice}` });
+      }
+      if (event.type === 'cancelled') {
+        if (streamFlushTimerRef.current !== null) window.clearTimeout(streamFlushTimerRef.current);
+        streamFlushTimerRef.current = null;
+        setAnswer({ status: 'success', text: streamTextRef.current || 'Solicitação cancelada.' });
+      }
+      if (event.type === 'error') {
+        if (streamFlushTimerRef.current !== null) window.clearTimeout(streamFlushTimerRef.current);
+        streamFlushTimerRef.current = null;
+        const partial = streamTextRef.current;
+        setAnswer({ status: 'error', text: partial ? `${partial}\n\n**Falha ao concluir:** ${event.message}` : event.message });
+      }
+    });
+    return () => {
+      unsubscribe();
+      if (streamFlushTimerRef.current !== null) window.clearTimeout(streamFlushTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    const copy = answerCopyRef.current;
+    if (copy && followAnswerRef.current) copy.scrollTop = copy.scrollHeight;
+  }, [answer.text, answer.status]);
 
   const openPrompt = useCallback(() => {
     setPromptOpen(true);
@@ -165,6 +207,10 @@ export function Overlay() {
       }
       setAnswerOpen(true);
       setResponseTab('answers');
+      streamTextRef.current = '';
+      followAnswerRef.current = true;
+      if (streamFlushTimerRef.current !== null) window.clearTimeout(streamFlushTimerRef.current);
+      streamFlushTimerRef.current = null;
       setAnswer({ status: 'loading', text: imageDataUrl ? 'Analisando a captura…' : 'Pensando na sua pergunta…' });
       try {
         window.persona.askStream({ prompt: prompt.trim(), imageDataUrl, profileId: activeProfileId, attachments, contextEntries: selectedMemory });
@@ -366,7 +412,7 @@ export function Overlay() {
             <button type="button" role="tab" aria-selected={responseTab === 'answers'} className={responseTab === 'answers' ? 'is-active' : ''} onClick={() => setResponseTab('answers')}><MessageSquareText size={14} />Respostas{answerHistory.length > 0 && <small>{answerHistory.length + (answer.status === 'success' && answer.text.trim() ? 1 : 0)}</small>}</button>
           </nav>}
 
-          <div className="answer-copy" style={{ fontSize: `${answerFontSize}px` }} hidden={meetingOpen && responseTab !== 'answers'}>
+          <div ref={answerCopyRef} className="answer-copy" style={{ fontSize: `${answerFontSize}px` }} onScroll={(event) => { const element = event.currentTarget; followAnswerRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 64; }} hidden={meetingOpen && responseTab !== 'answers'}>
             {answerHistory.map((item) => <div className="answer-history-entry" key={item.id}><AnswerContent text={item.text} /><hr className="answer-history-divider" /></div>)}
             {answer.status === 'loading' && <span className="thinking-line" aria-hidden="true" />}
             <AnswerContent text={answer.text} />
@@ -380,6 +426,7 @@ export function Overlay() {
               alibabaWorkspaceHost={settings.alibabaWorkspaceHost}
               transcriptionProvider={settings.transcriptionProvider}
               isAnswerBusy={answer.status === 'loading' || meetingIsAnalyzing}
+              activeProfileId={activeProfileId}
               analysisRequestId={transcriptAnalysisRequestId}
               onSessionActiveChange={setMeetingActive}
               onAnalysisStateChange={setMeetingIsAnalyzing}

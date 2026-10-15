@@ -96,6 +96,7 @@ export type AskResult = {
 export type StreamEvent =
   | { type: 'delta'; text: string }
   | { type: 'done'; requestId?: string }
+  | { type: 'incomplete'; message: string }
   | { type: 'error'; message: string }
   | { type: 'cancelled' };
 
@@ -141,6 +142,7 @@ export type TranscriptSegment = {
 
 export type MeetingSummaryInput = {
   transcript: string;
+  profileId?: string;
 };
 
 export type ShortcutAction =

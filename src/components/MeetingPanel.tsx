@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AlibabaTranscriptionEvent, AudioSource, TranscriptSegment } from '../../electron/contracts';
 import { errorMessage } from '../lib/errors';
 import { alibabaTranscriptionCost } from '../lib/model-pricing';
+import { getUnanalyzedSegments } from '../lib/transcript-cursor';
 
 type Props = {
   hasApiKey: boolean;
@@ -11,6 +12,7 @@ type Props = {
   alibabaWorkspaceHost: string;
   transcriptionProvider: 'openai' | 'alibaba';
   isAnswerBusy: boolean;
+  activeProfileId: string;
   analysisRequestId: number;
   onSummary(text: string): void;
   onSessionActiveChange(active: boolean): void;
@@ -59,7 +61,7 @@ function AudioChannelMeter({ channel, level, muted, onToggleMute }: {
   );
 }
 
-export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceHost, alibabaWorkspaceHost, transcriptionProvider, isAnswerBusy, analysisRequestId, onSummary, onSessionActiveChange, onAnalysisStateChange }: Props) {
+export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceHost, alibabaWorkspaceHost, transcriptionProvider, isAnswerBusy, activeProfileId, analysisRequestId, onSummary, onSessionActiveChange, onAnalysisStateChange }: Props) {
   const [state, setState] = useState<MeetingState>('setup');
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const [pending, setPending] = useState(0);
@@ -85,6 +87,8 @@ export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceH
   const mutedChannelsRef = useRef<ChannelValues<boolean>>({ microphone: false, computer: false });
   const transcriptionChainRef = useRef<Promise<void>>(Promise.resolve());
   const transcriptRef = useRef<TranscriptSegment[]>([]);
+  const analyzedSegmentsRef = useRef(new Map<string, string>());
+  const [lastAnalyzedSegmentId, setLastAnalyzedSegmentId] = useState<string | null>(null);
   const startInFlightRef = useRef(false);
   const autoStartRef = useRef(false);
   const autoStartTimerRef = useRef<number | null>(null);
@@ -374,13 +378,20 @@ export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceH
 
   const analyzeTranscript = async () => {
     if (isAnalyzing || isAnswerBusy || !hasApiKey || (state !== 'recording' && state !== 'finished')) return;
-    const transcript = transcriptRef.current.map((segment) => segment.text).join('\n');
-    if (!transcript.trim()) { setError('Ainda não há transcrição disponível para analisar.'); return; }
+    const snapshot = transcriptRef.current.map((segment) => ({ ...segment }));
+    const newSegments = getUnanalyzedSegments(snapshot, analyzedSegmentsRef.current);
+    const transcript = newSegments.map((segment) => segment.text).join('\n');
+    if (!transcript.trim()) {
+      setError(snapshot.length ? 'Não há novos trechos desde a última análise.' : 'Ainda não há transcrição disponível para analisar.');
+      return;
+    }
     setIsAnalyzing(true);
     onAnalysisStateChange(true);
     setError('');
     try {
-      const result = await window.persona.summarizeMeeting({ transcript });
+      const result = await window.persona.summarizeMeeting({ transcript, profileId: activeProfileId });
+      for (const segment of newSegments) analyzedSegmentsRef.current.set(segment.id, segment.text);
+      setLastAnalyzedSegmentId(newSegments.at(-1)?.id ?? null);
       onSummary(result.text);
     } catch (reason) {
       setError(errorMessage(reason));
@@ -400,6 +411,8 @@ export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceH
     generationRef.current += 1;
     releaseMedia();
     transcriptRef.current = [];
+    analyzedSegmentsRef.current.clear();
+    setLastAnalyzedSegmentId(null);
     setSegments([]);
     setError('');
     setState('setup');
@@ -432,7 +445,7 @@ export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceH
             <AudioChannelMeter channel="computer" level={audioLevels.computer} muted={mutedChannels.computer} onToggleMute={() => toggleChannelMuted('computer')} />
           </section>}
           <div className="transcript" aria-live="polite">
-            {segments.map((segment) => <p key={segment.id}><time>{new Date(segment.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</time>{segment.text}</p>)}
+            {segments.map((segment) => <div className="transcript-entry" key={segment.id}><p><time>{new Date(segment.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</time>{segment.text}</p>{segment.id === lastAnalyzedSegmentId && <div className="transcript-analysis-marker" role="note">Última análise até aqui</div>}</div>)}
             {!segments.length && <p className="transcript-empty">{transcriptionProvider === 'alibaba' ? 'A transcrição ao vivo do Qwen aparecerá aqui enquanto você fala. Você pode abrir a aba Respostas sem encerrar a sessão.' : 'A transcrição aparecerá aqui em blocos de cerca de 12 segundos. Você pode abrir a aba Respostas sem encerrar a sessão.'}</p>}
           </div>
           {error && <p className="meeting-error" role="alert">{error}</p>}

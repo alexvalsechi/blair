@@ -4,6 +4,7 @@ import type { AssistantProfile, Attachment, ModelPolicy, ProfileModelPolicy, Sav
 import { MAX_INSTRUCTIONS_LENGTH } from '../../electron/contracts';
 import { errorMessage } from '../lib/errors';
 import { alibabaTranscriptionModelPrice, analysisModelPrice, transcriptionModelPrice } from '../lib/model-pricing';
+import { DEFAULT_MAX_OUTPUT_TOKENS } from '../../electron/validation';
 
 type Page = 'connection' | 'models' | 'agents' | 'privacy' | 'appearance' | 'shortcuts';
 type Notice = { tone: 'success' | 'error'; text: string } | null;
@@ -57,7 +58,7 @@ export function Settings() {
   const [historyEnabled, setHistoryEnabled] = useState(false);
   const [scale, setScale] = useState(1);
   const [layoutPosition, setLayoutPosition] = useState<'center' | 'upper-right' | 'lower-center'>('center');
-  const [maxOutputTokens, setMaxOutputTokens] = useState(1200);
+  const [maxOutputTokens, setMaxOutputTokens] = useState(DEFAULT_MAX_OUTPUT_TOKENS);
   const [profiles, setProfiles] = useState<AssistantProfile[]>([]);
   const [activeProfileId, setActiveProfileId] = useState(() => localStorage.getItem('persona.activeProfile') ?? 'general');
   const [draft, setDraft] = useState<SaveAssistantProfileInput>(emptyAgent);
@@ -199,7 +200,7 @@ export function Settings() {
               {modelOptions.length ? modelOptions.map((modelId) => <button type="button" key={modelId} className={`model-card ${policyModels[viewPolicy] === modelId ? 'is-selected' : ''}`} onClick={() => setPolicyModels((current) => ({ ...current, [viewPolicy]: modelId }))}><span className="model-icon">◎</span><span className="model-copy"><strong>{modelId}</strong><small>{modelId === policyModels[viewPolicy] ? `Selecionado para ${policyLabels[viewPolicy].toLowerCase()}` : `Modelo OpenAI · ${policyLabels[viewPolicy].toLowerCase()}`}</small><small className="model-price">{analysisModelPrice(modelId)}</small></span>{policyModels[viewPolicy] === modelId && <Check size={17} />}</button>) : <div className="model-empty"><Sparkles size={22} /><strong>{hasApiKey ? 'Carregue os modelos da sua conta' : 'Conecte a OpenAI para ver seus modelos'}</strong><span>{hasApiKey ? 'A lista reflete os modelos acessíveis por esta chave.' : 'Você pode cadastrar a chave na seção Conexão.'}</span>{hasApiKey && <button className="settings-secondary" type="button" onClick={() => void loadModels()} disabled={loadingModels}>{loadingModels ? 'Carregando…' : 'Carregar modelos'}</button>}</div>}
             </section>
             </div>
-            <section className="settings-section model-advanced"><h2>Comportamento da resposta</h2><label className="settings-label" htmlFor="max-output">Limite de resposta <output>{maxOutputTokens.toLocaleString('pt-BR')} tokens</output></label><input id="max-output" type="range" min="200" max="8000" step="200" value={maxOutputTokens} onChange={(event) => setMaxOutputTokens(Number(event.target.value))} /><p className="field-help">Limite técnico da resposta; não representa um teto de custo garantido.</p><label className="settings-label" htmlFor="default-policy">Faixa padrão<select id="default-policy" className="settings-select" value={modelPolicy} onChange={(event) => choosePolicy(event.target.value as ModelPolicy)}><option value="economy">Economia</option><option value="balanced">Equilíbrio</option><option value="quality">Qualidade</option></select></label><p className="field-help">Agentes especialistas podem usar uma faixa diferente da padrão.</p></section>
+            <section className="settings-section model-advanced"><h2>Comportamento da resposta</h2><label className="settings-label" htmlFor="max-output">Orçamento de saída <output>{maxOutputTokens.toLocaleString('pt-BR')} tokens</output></label><input id="max-output" type="range" min="200" max="8000" step="200" value={maxOutputTokens} onChange={(event) => setMaxOutputTokens(Number(event.target.value))} /><p className="field-help">O painel permite rolar respostas longas sem cortá-las. Este orçamento é enviado ao modelo; se for atingido, a resposta será marcada como incompleta. Padrão: 8.000 tokens.</p><label className="settings-label" htmlFor="default-policy">Faixa padrão<select id="default-policy" className="settings-select" value={modelPolicy} onChange={(event) => choosePolicy(event.target.value as ModelPolicy)}><option value="economy">Economia</option><option value="balanced">Equilíbrio</option><option value="quality">Qualidade</option></select></label><p className="field-help">Agentes especialistas podem usar uma faixa diferente da padrão.</p></section>
             </div>
             </> : <>
               <div id="transcription-task-panel" role="tabpanel" aria-labelledby="transcription-task-tab" tabIndex={0}>

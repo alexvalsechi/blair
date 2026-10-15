@@ -435,6 +435,8 @@ kbd {
 .transcript { min-height: 170px; max-height: 410px; overflow: auto; padding: 4px 3px 14px; user-select: text; }
 .transcript p { display: grid; grid-template-columns: 48px 1fr; gap: 10px; margin: 0; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,.08); color: #edf0ec; font-size: 13px; line-height: 1.55; }
 .transcript time { color: var(--teal); font-family: 'IBM Plex Mono', monospace; font-size: 10px; }
+.transcript-analysis-marker { display: flex; align-items: center; gap: 8px; padding: 7px 0 7px 58px; color: var(--teal); font-size: 9px; }
+.transcript-analysis-marker::before { width: 18px; height: 1px; background: currentColor; content: ''; }
 .transcript .transcript-empty { display: block; border: 0; color: var(--muted); text-align: center; padding: 48px 20px; }
 .meeting-controls { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,.13); }
 .meeting-controls button { display: inline-flex; align-items: center; gap: 7px; min-height: 40px; padding: 0 12px; border: 1px solid var(--line); border-radius: 9px; background: rgba(255,255,255,.05); cursor: pointer; font-size: 12px; }

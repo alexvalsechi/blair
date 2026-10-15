@@ -15,8 +15,10 @@ export function normalizeModelPolicy(value: string): 'economy' | 'balanced' | 'q
   return value === 'economy' || value === 'quality' ? value : 'balanced';
 }
 
+export const DEFAULT_MAX_OUTPUT_TOKENS = 8_000;
+
 export function clampMaxOutputTokens(value: number): number {
-  if (!Number.isFinite(value)) return 1200;
+  if (!Number.isFinite(value)) return DEFAULT_MAX_OUTPUT_TOKENS;
   return Math.min(8_000, Math.max(200, Math.round(value)));
 }
 

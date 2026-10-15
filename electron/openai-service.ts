@@ -51,6 +51,14 @@ export async function askOpenAI(apiKey: string, model: string, input: AskInput, 
     max_output_tokens: options.maxOutputTokens,
   });
 
+  if (response.status === 'incomplete') {
+    const reason = response.incomplete_details?.reason;
+    throw new Error(reason === 'max_output_tokens'
+      ? `A resposta atingiu o orçamento configurado de ${options.maxOutputTokens?.toLocaleString('pt-BR') ?? 'saída'} tokens e pode estar incompleta.`
+      : 'O provedor encerrou a resposta antes de concluí-la.');
+  }
+  if (response.status === 'failed') throw new Error(response.error?.message ?? 'O provedor não conseguiu concluir a resposta.');
+
   return {
     text: response.output_text || 'A OpenAI concluiu a solicitação sem retornar texto.',
     requestId: response._request_id ?? undefined,
@@ -68,6 +76,17 @@ export async function streamOpenAI(
   for await (const event of stream) {
     if (event.type === 'response.output_text.delta') onEvent({ type: 'delta', text: event.delta });
     else if (event.type === 'response.completed') onEvent({ type: 'done', requestId: (event.response as unknown as { _request_id?: string })._request_id });
+    else if (event.type === 'response.incomplete') {
+      const reason = event.response.incomplete_details?.reason;
+      const message = reason === 'max_output_tokens'
+        ? `A resposta atingiu o orçamento configurado de ${options.maxOutputTokens?.toLocaleString('pt-BR') ?? 'saída'} tokens e pode estar incompleta.`
+        : reason === 'content_filter'
+          ? 'O provedor interrompeu a resposta por uma regra de conteúdo.'
+          : 'O provedor encerrou a resposta antes de concluí-la.';
+      onEvent({ type: 'incomplete', message });
+    } else if (event.type === 'response.failed') {
+      onEvent({ type: 'error', message: event.response.error?.message ?? 'O provedor não conseguiu concluir a resposta.' });
+    } else if (event.type === 'error') onEvent({ type: 'error', message: event.message });
   }
 }
 

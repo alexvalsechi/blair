@@ -2,7 +2,7 @@ import { app, safeStorage } from 'electron';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { ModelPolicy, PublicSettings, SaveSettingsInput, ShortcutAction } from './contracts.js';
-import { clampMaxOutputTokens, clampOpacity, normalizeModel, normalizeModelPolicy } from './validation.js';
+import { clampMaxOutputTokens, clampOpacity, DEFAULT_MAX_OUTPUT_TOKENS, normalizeModel, normalizeModelPolicy } from './validation.js';
 
 type StoredSettings = {
   encryptedApiKey?: string;
@@ -42,8 +42,9 @@ const defaults: StoredSettings = {
   scale: 1,
   modelPolicy: 'balanced',
   policyModels: { economy: 'gpt-5.5', balanced: 'gpt-5.5', quality: 'gpt-5.5' },
-  maxOutputTokens: 1200,
+  maxOutputTokens: DEFAULT_MAX_OUTPUT_TOKENS,
 };
+const LEGACY_DEFAULT_MAX_OUTPUT_TOKENS = 1200;
 
 const settingsPath = () => path.join(app.getPath('userData'), 'settings.json');
 
@@ -58,7 +59,10 @@ async function readStored(): Promise<StoredSettings> {
       scale: Math.min(1.2, Math.max(0.8, parsed.scale ?? defaults.scale)),
       policyModels: { ...defaults.policyModels, balanced: parsed.model ?? defaults.policyModels.balanced, ...(parsed.policyModels ?? {}) },
       modelPolicy: normalizeModelPolicy(parsed.modelPolicy ?? defaults.modelPolicy),
-      maxOutputTokens: clampMaxOutputTokens(parsed.maxOutputTokens ?? defaults.maxOutputTokens),
+      // 1,200 was the old application default and cut off many normal long answers.
+      maxOutputTokens: clampMaxOutputTokens(parsed.maxOutputTokens === LEGACY_DEFAULT_MAX_OUTPUT_TOKENS
+        ? DEFAULT_MAX_OUTPUT_TOKENS
+        : parsed.maxOutputTokens ?? defaults.maxOutputTokens),
     };
   } catch {
     return { ...defaults };
