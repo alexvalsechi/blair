@@ -422,6 +422,7 @@ export function Overlay() {
             ref={inputRef}
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
+            onFocus={() => void window.persona.focusOverlay()}
             placeholder="Pergunte sem sair da reunião…"
             aria-label="Pergunta para a IA"
           />

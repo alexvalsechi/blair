@@ -82,6 +82,7 @@ body[data-view='overlay'] { background: transparent; }
   cursor: grab;
 }
 .prompt-rail:active { cursor: grabbing; }
+.prompt-rail:focus-within { border-color: rgba(56, 199, 197, .78); box-shadow: 0 0 0 2px rgba(56, 199, 197, .2), var(--shadow); }
 .prompt-context-row { grid-column: 1 / -1; display: flex; align-items: center; flex-wrap: wrap; gap: 7px; padding: 1px 1px 2px 32px; }
 .prompt-context-row > button, .attachment-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 27px; padding: 0 9px; border: 1px solid rgba(255,255,255,.14); border-radius: 8px; background: rgba(255,255,255,.045); color: var(--muted); font-size: 10px; cursor: pointer; }
 .prompt-context-row > button:hover { border-color: rgba(56,199,197,.45); color: var(--ink); }
@@ -97,6 +98,7 @@ body[data-view='overlay'] { background: transparent; }
   border: 0;
   background: transparent;
   color: var(--ink);
+  caret-color: var(--teal);
   font-size: 16px;
   line-height: 1.4;
 }

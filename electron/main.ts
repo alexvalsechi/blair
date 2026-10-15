@@ -220,7 +220,9 @@ function focusOverlay(): void {
   if (!overlayWindow.isVisible()) overlayWindow.show();
   overlayWindow.moveTop();
   overlayWindow.focus();
-  overlayPointerPosition = null;
+  const cursor = screen.getCursorScreenPoint();
+  const bounds = overlayWindow.getBounds();
+  overlayPointerPosition = { x: cursor.x - bounds.x, y: cursor.y - bounds.y };
   clickThroughApplied = null;
   syncOverlayMouseMode();
 }
