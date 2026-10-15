@@ -6,6 +6,7 @@ import {
   Check,
   ChevronDown,
   Copy,
+  FileDown,
   EyeOff,
   GripVertical,
   Mic,
@@ -56,6 +57,8 @@ export function Overlay() {
   const [interactionMode, setInteractionMode] = useState(false);
   const [answer, setAnswer] = useState<AnswerState>(initialAnswer);
   const [answerHistory, setAnswerHistory] = useState<AnswerHistoryItem[]>([]);
+  const [pdfExportStatus, setPdfExportStatus] = useState('');
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
   const answerCopyRef = useRef<HTMLDivElement>(null);
   const followAnswerRef = useRef(true);
   const streamTextRef = useRef('');
@@ -78,6 +81,35 @@ export function Overlay() {
   const promptDrag = useDragPosition({ x: 0, y: 0 }, 'persona.overlay.prompt-position');
   const answerDrag = useDragPosition({ x: 0, y: 0 }, 'persona.overlay.answer-position');
   const dockDrag = useDragPosition({ x: 0, y: 0 }, 'persona.overlay.dock-position');
+
+  const exportAnswerPdf = async () => {
+    const answerElement = answerCopyRef.current;
+    if (!answerElement || isExportingPdf) return;
+    setIsExportingPdf(true);
+    setPdfExportStatus('Preparando PDF…');
+    try {
+      await document.fonts.ready;
+      const diagramDeadline = Date.now() + 10_000;
+      while (answerElement.querySelector('.d2-diagram-loading') && Date.now() < diagramDeadline) {
+        await new Promise((resolve) => window.setTimeout(resolve, 100));
+      }
+      const content = answerElement.cloneNode(true) as HTMLDivElement;
+      content.querySelectorAll('script, button, input, textarea, select').forEach((element) => element.remove());
+      content.querySelectorAll('.thinking-line').forEach((element) => element.remove());
+      content.querySelectorAll<HTMLElement>('*').forEach((element) => {
+        for (const attribute of Array.from(element.attributes)) {
+          if (attribute.name.toLowerCase().startsWith('on')) element.removeAttribute(attribute.name);
+        }
+      });
+      const path = await window.persona.exportAnswerPdf(content.innerHTML);
+      setPdfExportStatus(`PDF salvo em ${path}`);
+    } catch (error) {
+      setPdfExportStatus(`Falha ao exportar: ${errorMessage(error)}`);
+    } finally {
+      setIsExportingPdf(false);
+      window.setTimeout(() => setPdfExportStatus(''), 8000);
+    }
+  };
 
   useEffect(() => {
     const publishInteractiveRegions = () => {
@@ -463,6 +495,10 @@ export function Overlay() {
             >
               <Copy size={15} /> <span className="copy-label">Copiar</span>
             </button>
+            <button className="copy-action" type="button" hidden={meetingOpen && responseTab !== 'answers'} disabled={isExportingPdf || answer.status === 'loading' || (!answer.text.trim() && answerHistory.length === 0)} title={pdfExportStatus || 'Exportar respostas em PDF'} onClick={() => void exportAnswerPdf()}>
+              <FileDown size={15} /> <span>{isExportingPdf ? 'Exportando…' : 'Exportar PDF'}</span>
+            </button>
+            <span className="answer-export-status" role="status" aria-live="polite">{pdfExportStatus}</span>
             <div className="answer-typography" aria-label="Tamanho da fonte da resposta" hidden={meetingOpen && responseTab !== 'answers'}>
               <button type="button" aria-label="Diminuir fonte" title="Diminuir fonte" onClick={() => adjustAnswerFont(-1)} disabled={answerFontSize <= 12}><Minus size={15} /><span>A</span></button>
               <output aria-live="polite">{answerFontSize}px</output>

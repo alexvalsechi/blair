@@ -34,6 +34,7 @@ declare global {
       searchMemory(query: string): Promise<HistoryEntry[]>;
       deleteMemory(id: string): Promise<void>;
       exportMemory(format: 'json' | 'markdown'): Promise<boolean>;
+      exportAnswerPdf(html: string): Promise<string>;
       listProfiles(): Promise<AssistantProfile[]>;
       saveProfile(input: SaveAssistantProfileInput): Promise<AssistantProfile>;
       deleteProfile(id: string): Promise<void>;

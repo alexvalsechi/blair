@@ -10,7 +10,7 @@ import {
 } from 'electron';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import type { AskInput, Attachment, MeetingSummaryInput, SaveAssistantProfileInput, SaveSettingsInput, ShortcutAction, TranscribeInput, AlibabaTranscriptionEvent } from './contracts.js';
 import { askAlibaba, askOpenAI, listAlibabaAvailableModels, listAvailableModels, listAvailableTranscriptionModels, streamAlibaba, streamOpenAI, transcribeOpenAI } from './openai-service.js';
@@ -404,6 +404,56 @@ function registerIpc(): void {
     const content = format === 'json' ? JSON.stringify(entries, null, 2) : entries.map((entry) => `## ${new Date(entry.createdAt).toLocaleString('pt-BR')}\n\n**Pergunta:** ${entry.prompt}\n\n${entry.answer}\n`).join('\n---\n\n');
     await writeFile(result.filePath, content, 'utf8');
     return true;
+  });
+  ipcMain.handle('answer:export-pdf', async (_event, content: unknown) => {
+    if (typeof content !== 'string' || content.length > 20_000_000) {
+      throw new Error('O conteúdo da resposta é inválido ou grande demais para exportar.');
+    }
+    const outputDirectory = path.join(app.getPath('documents'), 'Persona', 'Respostas');
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const outputPath = path.join(outputDirectory, `persona-resposta-${timestamp}.pdf`);
+    const html = `<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>Resposta Persona</title>
+<style>
+@page { size: A4; margin: 16mm; }
+* { box-sizing: border-box; }
+html { color-scheme: light; }
+body { margin: 0; color: #20252b; background: #fff; font: 11pt/1.55 Arial, Helvetica, sans-serif; overflow-wrap: anywhere; }
+main { width: 100%; }
+p { margin: 0 0 10pt; white-space: pre-wrap; }
+.answer-markdown > :first-child { margin-top: 0; }
+.answer-markdown > :last-child { margin-bottom: 0; }
+h1, h2, h3, h4 { line-height: 1.3; margin: 18pt 0 7pt; break-after: avoid; }
+h1 { font-size: 19pt; } h2 { font-size: 16pt; } h3 { font-size: 13pt; } h4 { font-size: 11pt; }
+ul, ol { margin: 0 0 10pt; padding-left: 1.5em; }
+li { margin: 3pt 0; }
+blockquote { margin: 0 0 10pt; padding-left: 10pt; color: #4a535d; border-left: 2px solid #89939e; }
+code, pre { font-family: Consolas, "Courier New", monospace; }
+:not(pre) > code { padding: 1pt 3pt; border-radius: 3pt; background: #eef1f4; }
+pre { max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere; padding: 9pt 10pt; border-radius: 5pt; background: #f1f3f5; break-inside: avoid; }
+table { width: 100%; border-collapse: collapse; margin: 0 0 12pt; table-layout: auto; font-size: 9.5pt; }
+thead { display: table-header-group; }
+tr { break-inside: avoid; }
+th, td { padding: 5pt 7pt; border: 1px solid #b7bec6; text-align: left; vertical-align: top; }
+th { background: #e9edf1; }
+a { color: #145e9b; }
+.answer-history-divider { height: 0; margin: 18pt 0; border: 0; border-top: 1px solid #c7cdd3; }
+.d2-diagram-card { width: 100%; margin: 12pt 0 16pt; padding: 8pt; overflow: hidden; border: 1px solid #d3d7dc; border-radius: 7pt; background: #fff; break-inside: avoid; }
+.d2-diagram-image { display: block; width: 100%; max-height: 240mm; }
+.d2-diagram-image svg { display: block; width: 100%; height: auto; max-height: 240mm; }
+.d2-diagram-image img { display: block; max-width: 100%; height: auto; }
+img { max-width: 100%; height: auto; }
+</style></head><body><main>${content}</main></body></html>`;
+    const pdfWindow = new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } });
+    try {
+      await pdfWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+      const pdf = await pdfWindow.webContents.printToPDF({ pageSize: 'A4', printBackground: true, preferCSSPageSize: true });
+      await mkdir(outputDirectory, { recursive: true });
+      await writeFile(outputPath, pdf);
+      return outputPath;
+    } finally {
+      if (!pdfWindow.isDestroyed()) pdfWindow.destroy();
+    }
   });
   ipcMain.handle('profiles:list', () => listProfiles());
   ipcMain.handle('profiles:save', (_event, input: SaveAssistantProfileInput) => saveProfile(input));

@@ -42,6 +42,7 @@ contextBridge.exposeInMainWorld('persona', {
   searchMemory: (query: string): Promise<HistoryEntry[]> => ipcRenderer.invoke('memory:search', query),
   deleteMemory: (id: string): Promise<void> => ipcRenderer.invoke('memory:delete', id),
   exportMemory: (format: 'json' | 'markdown'): Promise<boolean> => ipcRenderer.invoke('memory:export', format),
+  exportAnswerPdf: (html: string): Promise<string> => ipcRenderer.invoke('answer:export-pdf', html),
   listProfiles: (): Promise<AssistantProfile[]> => ipcRenderer.invoke('profiles:list'),
   saveProfile: (input: SaveAssistantProfileInput): Promise<AssistantProfile> => ipcRenderer.invoke('profiles:save', input),
   deleteProfile: (id: string): Promise<void> => ipcRenderer.invoke('profiles:delete', id),
