@@ -222,7 +222,9 @@ export function Overlay() {
     if (copy && followAnswerRef.current) copy.scrollTop = copy.scrollHeight;
   }, [answer.text, answer.status]);
 
-  const openPrompt = useCallback(() => {
+  const openPrompt = useCallback(async () => {
+    await window.persona.focusOverlay();
+    setAlwaysOnTop(true);
     setPromptOpen(true);
     requestAnimationFrame(() => inputRef.current?.focus());
   }, []);
@@ -236,6 +238,8 @@ export function Overlay() {
   const submit = useCallback(
     async (imageDataUrl?: string) => {
       if (answer.status === 'loading' || meetingIsAnalyzing || (captureInFlight.current && !imageDataUrl)) return;
+      await window.persona.focusOverlay();
+      setAlwaysOnTop(true);
       if (!hasAnalysisApiKey) {
         setAnswerOpen(true);
         setAnswer({ status: 'error', text: 'Configure sua chave OpenAI para começar.' });

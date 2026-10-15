@@ -213,6 +213,18 @@ function showSettings(): void {
   settingsWindow.focus();
 }
 
+function focusOverlay(): void {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return;
+  restoreOverlayAlwaysOnTop = settingsWindow ? true : restoreOverlayAlwaysOnTop;
+  overlayWindow.setAlwaysOnTop(true, 'screen-saver');
+  if (!overlayWindow.isVisible()) overlayWindow.show();
+  overlayWindow.moveTop();
+  overlayWindow.focus();
+  overlayPointerPosition = null;
+  clickThroughApplied = null;
+  syncOverlayMouseMode();
+}
+
 function sendShortcut(action: ShortcutAction): void {
   if (!overlayWindow || overlayWindow.isDestroyed()) return;
   if (!overlayWindow.isVisible()) overlayWindow.showInactive();
@@ -291,6 +303,7 @@ function registerIpc(): void {
   });
   ipcMain.handle('window:open-settings', () => showSettings());
   ipcMain.handle('window:close-settings', () => settingsWindow?.close());
+  ipcMain.handle('overlay:focus', () => focusOverlay());
   ipcMain.handle('overlay:move-to-display', (_event, captureSourceId: string) => {
     if (!overlayWindow || overlayWindow.isDestroyed()) return;
     overlayWindow.setBounds(getOverlayBounds(captureSourceId));

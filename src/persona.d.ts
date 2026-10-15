@@ -52,6 +52,7 @@ declare global {
       setClickThrough(enabled: boolean): void;
       hideOverlay(): void;
       showOverlay(): void;
+      focusOverlay(): Promise<void>;
       setInteractiveRegions(regions: Array<{ x: number; y: number; width: number; height: number }>): void;
       beginOverlayDrag(): void;
       endOverlayDrag(): void;

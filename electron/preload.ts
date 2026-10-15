@@ -64,6 +64,7 @@ contextBridge.exposeInMainWorld('persona', {
   setClickThrough: (enabled: boolean): void => ipcRenderer.send('overlay:set-click-through', enabled),
   hideOverlay: (): void => ipcRenderer.send('overlay:hide'),
   showOverlay: (): void => ipcRenderer.send('overlay:show'),
+  focusOverlay: (): Promise<void> => ipcRenderer.invoke('overlay:focus'),
   setInteractiveRegions: (regions: Array<{ x: number; y: number; width: number; height: number }>): void => ipcRenderer.send('overlay:set-interactive-regions', regions),
   beginOverlayDrag: (): void => ipcRenderer.send('overlay:drag-start'),
   endOverlayDrag: (): void => ipcRenderer.send('overlay:drag-end'),
