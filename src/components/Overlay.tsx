@@ -498,7 +498,7 @@ export function Overlay() {
             <button className="copy-action" type="button" hidden={meetingOpen && responseTab !== 'answers'} disabled={isExportingPdf || answer.status === 'loading' || (!answer.text.trim() && answerHistory.length === 0)} title={pdfExportStatus || 'Exportar respostas em PDF'} onClick={() => void exportAnswerPdf()}>
               <FileDown size={15} /> <span>{isExportingPdf ? 'Exportando…' : 'Exportar PDF'}</span>
             </button>
-            <span className="answer-export-status" role="status" aria-live="polite">{pdfExportStatus}</span>
+            {pdfExportStatus && <span className={`answer-export-notice ${pdfExportStatus.startsWith('Falha') ? 'is-error' : ''}`} role="status" aria-live="polite">{pdfExportStatus}</span>}
             <div className="answer-typography" aria-label="Tamanho da fonte da resposta" hidden={meetingOpen && responseTab !== 'answers'}>
               <button type="button" aria-label="Diminuir fonte" title="Diminuir fonte" onClick={() => adjustAnswerFont(-1)} disabled={answerFontSize <= 12}><Minus size={15} /><span>A</span></button>
               <output aria-live="polite">{answerFontSize}px</output>
