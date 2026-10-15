@@ -47,7 +47,7 @@ export function Overlay() {
   const hasAnalysisApiKey = settings.analysisProvider === 'alibaba' ? settings.hasAlibabaApiKey : settings.hasApiKey;
   const [promptOpen, setPromptOpen] = useState(false);
   const [prompt, setPrompt] = useState('');
-  const [answerOpen, setAnswerOpen] = useState(true);
+  const [answerOpen, setAnswerOpen] = useState(false);
   const [answerFontSize, setAnswerFontSize] = useState(16);
   const [answerSize, setAnswerSize] = useState<{ width: number; height: number; left: number; top: number; dragOriginX: number; dragOriginY: number } | null>(null);
   const answerPanelRef = useRef<HTMLElement>(null);
@@ -429,6 +429,9 @@ export function Overlay() {
           <KeyHint keys={['Ctrl', 'Enter']} />
           <button className="send-button" type="submit" disabled={(!prompt.trim() && !attachments.length) || answer.status === 'loading'} aria-label="Enviar pergunta">
             <ArrowUp size={20} />
+          </button>
+          <button className="icon-button prompt-close-button" type="button" title="Fechar pergunta" aria-label="Fechar janela de input" onClick={() => setPromptOpen(false)}>
+            <X size={18} />
           </button>
           <div className="prompt-context-row">
             <button type="button" onClick={() => setContextOpen(true)}><Layers3 size={14} /> {profiles.find((item) => item.id === activeProfileId)?.name ?? 'Copiloto geral'}{selectedMemory.length > 0 && <span>{selectedMemory.length} memória{selectedMemory.length > 1 ? 's' : ''}</span>}</button>

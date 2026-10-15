@@ -73,7 +73,7 @@ body[data-view='overlay'] { background: transparent; }
   min-height: 66px;
   transform: translate(calc(-50% + var(--drag-x, 0px)), var(--drag-y, 0px)) scale(var(--overlay-scale, 1));
   display: grid;
-  grid-template-columns: auto 1fr auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
   align-items: center;
   gap: 14px;
   padding: 10px 12px 10px 21px;
