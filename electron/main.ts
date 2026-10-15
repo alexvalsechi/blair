@@ -41,7 +41,9 @@ let dockVisible = true;
 let interactionMode = false;
 let overlayDragActive = false;
 let interactiveRegions: Array<{ x: number; y: number; width: number; height: number }> = [];
+let overlayPointerPosition: { x: number; y: number } | null = null;
 let clickThroughApplied: boolean | null = null;
+let overlayPointerPoll: NodeJS.Timeout | null = null;
 const activeRequests = new Map<number, AbortController>();
 
 async function assistantExecution(input: AskInput) {
@@ -82,19 +84,25 @@ function mimeTypeFor(filePath: string): string {
 
 function syncOverlayMouseMode(): void {
   if (!overlayWindow || overlayWindow.isDestroyed() || !overlayWindow.isVisible()) return;
-  const bounds = overlayWindow.getBounds();
-  const captureWholeWindow = interactionMode || overlayDragActive;
-  const shape = captureWholeWindow
-    ? [{ x: 0, y: 0, width: bounds.width, height: bounds.height }]
-    : interactiveRegions.filter((region) => region.width > 0 && region.height > 0);
-  // Windows hit-tests these native regions directly, so a click on a visible
-  // control cannot race the old cursor polling loop and fall through to another app.
-  overlayWindow.setShape(shape.length ? shape : [{ x: 0, y: 0, width: bounds.width, height: bounds.height }]);
-  const shouldIgnore = !captureWholeWindow && shape.length === 0;
+  const position = overlayPointerPosition;
+  const hitMargin = 16;
+  const overInteractiveRegion = position !== null && interactiveRegions.some((region) =>
+    position.x >= region.x - hitMargin && position.y >= region.y - hitMargin &&
+    position.x <= region.x + region.width + hitMargin && position.y <= region.y + region.height + hitMargin,
+  );
+  const shouldIgnore = !(interactionMode || overlayDragActive || overInteractiveRegion);
   if (clickThroughApplied !== shouldIgnore) {
     overlayWindow.setIgnoreMouseEvents(shouldIgnore, { forward: true });
     clickThroughApplied = shouldIgnore;
   }
+}
+
+function syncOverlayPointerFromScreen(): void {
+  if (!overlayWindow || overlayWindow.isDestroyed() || !overlayWindow.isVisible()) return;
+  const cursor = screen.getCursorScreenPoint();
+  const bounds = overlayWindow.getBounds();
+  overlayPointerPosition = { x: cursor.x - bounds.x, y: cursor.y - bounds.y };
+  syncOverlayMouseMode();
 }
 
 function getVirtualScreenBounds() {
@@ -212,6 +220,9 @@ function focusOverlay(): void {
   if (!overlayWindow.isVisible()) overlayWindow.show();
   overlayWindow.moveTop();
   overlayWindow.focus();
+  const cursor = screen.getCursorScreenPoint();
+  const bounds = overlayWindow.getBounds();
+  overlayPointerPosition = { x: cursor.x - bounds.x, y: cursor.y - bounds.y };
   clickThroughApplied = null;
   syncOverlayMouseMode();
 }
@@ -577,6 +588,7 @@ img { max-width: 100%; height: auto; }
   ipcMain.on('overlay:hide', () => overlayWindow?.hide());
   ipcMain.on('overlay:show', () => {
     overlayWindow?.showInactive();
+    overlayPointerPosition = null;
     clickThroughApplied = null;
     syncOverlayMouseMode();
   });
@@ -598,6 +610,9 @@ app.whenReady().then(async () => {
   screen.on('display-metrics-changed', refreshOverlayBounds);
   registerIpc();
   overlayWindow = createOverlayWindow();
+  // Keep transparent areas click-through while switching to interactive mode
+  // just before the cursor reaches a control, avoiding dropped clicks.
+  overlayPointerPoll = setInterval(syncOverlayPointerFromScreen, 4);
   session.defaultSession.setPermissionCheckHandler((webContents, permission) =>
     permission === 'media' && webContents === overlayWindow?.webContents,
   );
@@ -611,6 +626,7 @@ app.whenReady().then(async () => {
 });
 
 app.on('will-quit', () => {
+  if (overlayPointerPoll) clearInterval(overlayPointerPoll);
   globalShortcut.unregisterAll();
 });
 app.on('window-all-closed', () => app.quit());
