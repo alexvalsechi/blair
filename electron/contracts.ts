@@ -127,6 +127,9 @@ export type TranscribeInput = {
 
 export type AlibabaTranscriptionEvent =
   | { type: 'result'; sentenceId: number; sentenceEnd: boolean; text: string }
+  | { type: 'usage'; inputTokens: number; outputTokens: number }
+  | { type: 'connection'; status: 'connected' | 'reconnecting' | 'disconnected'; attempt: number; message?: string }
+  | { type: 'warning'; message: string }
   | { type: 'error'; message: string };
 
 export type TranscriptSegment = {

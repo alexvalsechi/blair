@@ -1,12 +1,14 @@
-import { AudioLines, CircleStop, Mic, MicOff, Sparkles, Volume2, VolumeX } from 'lucide-react';
+import { AudioLines, CircleStop, Mic, MicOff, RefreshCw, Sparkles, Volume2, VolumeX, Wifi, WifiOff } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AlibabaTranscriptionEvent, AudioSource, TranscriptSegment } from '../../electron/contracts';
 import { errorMessage } from '../lib/errors';
+import { alibabaTranscriptionCost } from '../lib/model-pricing';
 
 type Props = {
   hasApiKey: boolean;
   hasAlibabaApiKey: boolean;
   hasAlibabaWorkspaceHost: boolean;
+  alibabaWorkspaceHost: string;
   transcriptionProvider: 'openai' | 'alibaba';
   isAnswerBusy: boolean;
   analysisRequestId: number;
@@ -57,7 +59,7 @@ function AudioChannelMeter({ channel, level, muted, onToggleMute }: {
   );
 }
 
-export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceHost, transcriptionProvider, isAnswerBusy, analysisRequestId, onSummary, onSessionActiveChange, onAnalysisStateChange }: Props) {
+export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceHost, alibabaWorkspaceHost, transcriptionProvider, isAnswerBusy, analysisRequestId, onSummary, onSessionActiveChange, onAnalysisStateChange }: Props) {
   const [state, setState] = useState<MeetingState>('setup');
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const [pending, setPending] = useState(0);
@@ -65,6 +67,10 @@ export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceH
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [audioLevels, setAudioLevels] = useState<ChannelValues<number>>({ microphone: 0, computer: 0 });
   const [mutedChannels, setMutedChannels] = useState<ChannelValues<boolean>>({ microphone: false, computer: false });
+  const [alibabaUsage, setAlibabaUsage] = useState({ inputTokens: 0, outputTokens: 0 });
+  const [alibabaConnection, setAlibabaConnection] = useState<{ status: 'connected' | 'reconnecting' | 'disconnected'; attempt: number }>({ status: 'disconnected', attempt: 0 });
+  const [connectionMessage, setConnectionMessage] = useState('');
+  const [manualReconnectBusy, setManualReconnectBusy] = useState(false);
   const streamsRef = useRef<MediaStream[]>([]);
   const mixedStreamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -91,6 +97,13 @@ export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceH
   const canTranscribe = transcriptionProvider === 'alibaba' ? hasAlibabaApiKey && hasAlibabaWorkspaceHost : hasApiKey;
 
   useEffect(() => window.persona.onAlibabaTranscriptionEvent((event: AlibabaTranscriptionEvent) => {
+    if (event.type === 'usage') { setAlibabaUsage({ inputTokens: event.inputTokens, outputTokens: event.outputTokens }); return; }
+    if (event.type === 'connection') {
+      setAlibabaConnection({ status: event.status, attempt: event.attempt });
+      setConnectionMessage(event.message ?? (event.status === 'reconnecting' ? `Conexão instável. Tentando novamente (${event.attempt}/5)…` : ''));
+      return;
+    }
+    if (event.type === 'warning') { setConnectionMessage(event.message); return; }
     if (event.type === 'error') { setError(event.message); return; }
     const text = event.text.trim();
     if (!text) return;
@@ -258,6 +271,9 @@ export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceH
       sourceLabelRef.current = 'mixed';
       mixedStreamRef.current = destination.stream;
       if (transcriptionProvider === 'alibaba') {
+        setAlibabaUsage({ inputTokens: 0, outputTokens: 0 });
+        setAlibabaConnection({ status: 'reconnecting', attempt: 0 });
+        setConnectionMessage('Conectando ao Qwen…');
         await window.persona.startAlibabaTranscription();
         alibabaSessionActiveRef.current = true;
         const mixedSource = context.createMediaStreamSource(destination.stream);
@@ -294,6 +310,24 @@ export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceH
       startInFlightRef.current = false;
     }
   }, [canTranscribe, onSessionActiveChange, releaseMedia, startMetering, startSegment, state, transcriptionProvider]);
+
+  const reconnectAlibaba = useCallback(async () => {
+    if (manualReconnectBusy || state !== 'recording') return;
+    setManualReconnectBusy(true);
+    setAlibabaConnection({ status: 'reconnecting', attempt: 0 });
+    setConnectionMessage('Reconectando ao Qwen…');
+    try {
+      await window.persona.retryAlibabaTranscription();
+      alibabaSessionActiveRef.current = true;
+      setError('');
+      setConnectionMessage('');
+    } catch (reason) {
+      setAlibabaConnection({ status: 'disconnected', attempt: 5 });
+      setConnectionMessage(errorMessage(reason));
+    } finally {
+      setManualReconnectBusy(false);
+    }
+  }, [manualReconnectBusy, state]);
 
   useEffect(() => {
     if (!canTranscribe || autoStartRef.current) return;
@@ -382,7 +416,17 @@ export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceH
         </div>
       ) : (
         <>
-          <div className="meeting-status"><span className={`recording-dot ${state !== 'recording' ? 'is-paused' : ''}`} /><strong>{state === 'recording' ? 'Sessão ativa · transcrevendo' : state === 'ending' ? 'Encerrando sessão' : 'Sessão encerrada'}</strong><span>{pending ? `${pending} trecho${pending > 1 ? 's' : ''} em processamento` : 'Transcrição atualizada'}</span></div>
+          <div className="meeting-status"><span className={`recording-dot ${state !== 'recording' || (transcriptionProvider === 'alibaba' && alibabaConnection.status !== 'connected') ? 'is-paused' : ''}`} /><strong>{state === 'recording' ? transcriptionProvider === 'alibaba' && alibabaConnection.status !== 'connected' ? (alibabaConnection.status === 'reconnecting' ? 'Reconectando ao Qwen' : 'Qwen desconectado') : 'Sessão ativa · transcrevendo' : state === 'ending' ? 'Encerrando sessão' : 'Sessão encerrada'}</strong><span>{transcriptionProvider === 'alibaba' && state === 'recording' ? alibabaConnection.status === 'connected' ? 'Qwen conectado' : alibabaConnection.status === 'reconnecting' ? `Tentativa ${alibabaConnection.attempt}/5` : 'Aguardando reconexão' : pending ? `${pending} trecho${pending > 1 ? 's' : ''} em processamento` : 'Transcrição atualizada'}</span></div>
+          {transcriptionProvider === 'alibaba' && <div className="meeting-usage" aria-live="polite">
+            <div><strong>Consumo da sessão</strong><span>Entrada {alibabaUsage.inputTokens.toLocaleString('pt-BR')} · saída {alibabaUsage.outputTokens.toLocaleString('pt-BR')} tokens</span></div>
+            <strong className="meeting-usage-cost">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'USD', minimumFractionDigits: 6, maximumFractionDigits: 6 }).format(alibabaTranscriptionCost(alibabaWorkspaceHost, alibabaUsage.inputTokens, alibabaUsage.outputTokens))}</strong>
+            <small>Estimativa acumulada · {alibabaWorkspaceHost.toLowerCase().includes('.cn-beijing.') ? 'Pequim' : 'Singapura'}</small>
+          </div>}
+          {transcriptionProvider === 'alibaba' && connectionMessage && <div className={`meeting-connection ${alibabaConnection.status === 'disconnected' ? 'is-error' : ''}`} role={alibabaConnection.status === 'disconnected' ? 'alert' : 'status'}>
+            {alibabaConnection.status === 'disconnected' ? <WifiOff size={15} /> : <Wifi size={15} />}
+            <span>{connectionMessage}</span>
+            {alibabaConnection.status === 'disconnected' && state === 'recording' && <button type="button" onClick={() => void reconnectAlibaba()} disabled={manualReconnectBusy}>{manualReconnectBusy ? <RefreshCw size={13} className="is-spinning" /> : <RefreshCw size={13} />}Reconectar</button>}
+          </div>}
           {state === 'recording' && <section className="meeting-meters" aria-label="Medidores e controles de áudio">
             <AudioChannelMeter channel="microphone" level={audioLevels.microphone} muted={mutedChannels.microphone} onToggleMute={() => toggleChannelMuted('microphone')} />
             <AudioChannelMeter channel="computer" level={audioLevels.computer} muted={mutedChannels.computer} onToggleMute={() => toggleChannelMuted('computer')} />

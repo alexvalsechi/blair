@@ -48,6 +48,7 @@ contextBridge.exposeInMainWorld('persona', {
   diagnostics: (): Promise<Diagnostics> => ipcRenderer.invoke('privacy:diagnose'),
   transcribeAudio: (input: TranscribeInput): Promise<string> => ipcRenderer.invoke('audio:transcribe', input),
   startAlibabaTranscription: (): Promise<void> => ipcRenderer.invoke('audio:alibaba-start'),
+  retryAlibabaTranscription: (): Promise<void> => ipcRenderer.invoke('audio:alibaba-retry'),
   sendAlibabaAudioFrame: (audio: Uint8Array): void => ipcRenderer.send('audio:alibaba-frame', audio),
   stopAlibabaTranscription: (): Promise<void> => ipcRenderer.invoke('audio:alibaba-stop'),
   onAlibabaTranscriptionEvent: (callback: (event: AlibabaTranscriptionEvent) => void) => {

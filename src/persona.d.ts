@@ -40,6 +40,7 @@ declare global {
       diagnostics(): Promise<Diagnostics>;
       transcribeAudio(input: TranscribeInput): Promise<string>;
       startAlibabaTranscription(): Promise<void>;
+      retryAlibabaTranscription(): Promise<void>;
       sendAlibabaAudioFrame(audio: Uint8Array): void;
       stopAlibabaTranscription(): Promise<void>;
       onAlibabaTranscriptionEvent(callback: (event: AlibabaTranscriptionEvent) => void): () => void;

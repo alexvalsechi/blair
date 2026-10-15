@@ -14,7 +14,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import type { AskInput, Attachment, MeetingSummaryInput, SaveAssistantProfileInput, SaveSettingsInput, ShortcutAction, TranscribeInput, AlibabaTranscriptionEvent } from './contracts.js';
 import { askOpenAI, listAvailableModels, listAvailableTranscriptionModels, streamOpenAI, summarizeMeetingOpenAI, transcribeOpenAI } from './openai-service.js';
-import { sendAlibabaAudio, startAlibabaTranscription, stopAlibabaTranscription } from './alibaba-asr-service.js';
+import { retryAlibabaTranscription, sendAlibabaAudio, startAlibabaTranscription, stopAlibabaTranscription } from './alibaba-asr-service.js';
 import { appendHistory, clearHistory, deleteHistoryEntry, listHistory, searchHistory } from './history-store.js';
 import { deleteProfile, getProfile, listProfiles, saveProfile } from './assistant-store.js';
 import { resolveProfilePolicy } from './validation.js';
@@ -393,6 +393,10 @@ function registerIpc(): void {
     await startAlibabaTranscription(apiKey, settings.alibabaWorkspaceHost, (result: AlibabaTranscriptionEvent) => {
       if (!overlayWindow?.isDestroyed()) overlayWindow?.webContents.send('audio:alibaba-event', result);
     });
+  });
+  ipcMain.handle('audio:alibaba-retry', async (event) => {
+    if (!overlayWindow || event.sender !== overlayWindow.webContents) throw new Error('Janela não autorizada para transcrição.');
+    await retryAlibabaTranscription();
   });
   ipcMain.on('audio:alibaba-frame', (event, audio: Uint8Array) => {
     if (!overlayWindow || event.sender !== overlayWindow.webContents || !(audio instanceof Uint8Array)) return;

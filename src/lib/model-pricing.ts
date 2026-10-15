@@ -64,3 +64,17 @@ export function alibabaTranscriptionModelPrice(workspaceHost: string): string {
   const region = beijing ? 'Pequim' : 'Singapura';
   return `Entrada US$ ${input.toLocaleString('pt-BR')} + saÃ­da US$ ${output.toLocaleString('pt-BR')} / 1M tokens Â· ${region}`;
 }
+
+export function alibabaTranscriptionTokenRates(workspaceHost: string): { input: number; output: number; region: string } {
+  const beijing = workspaceHost.toLowerCase().includes('.cn-beijing.');
+  return beijing
+    ? { input: 0.848, output: 0.636, region: 'Pequim' }
+    : { input: 0.93, output: 0.7, region: 'Singapura' };
+}
+
+export function alibabaTranscriptionCost(workspaceHost: string, inputTokens: number, outputTokens: number): number {
+  const rates = alibabaTranscriptionTokenRates(workspaceHost);
+  const input = Number.isFinite(inputTokens) ? Math.max(0, inputTokens) : 0;
+  const output = Number.isFinite(outputTokens) ? Math.max(0, outputTokens) : 0;
+  return (input * rates.input + output * rates.output) / 1_000_000;
+}

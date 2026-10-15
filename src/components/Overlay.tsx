@@ -377,6 +377,7 @@ export function Overlay() {
               hasApiKey={settings.hasApiKey}
               hasAlibabaApiKey={settings.hasAlibabaTranscriptionApiKey}
               hasAlibabaWorkspaceHost={Boolean(settings.alibabaWorkspaceHost)}
+              alibabaWorkspaceHost={settings.alibabaWorkspaceHost}
               transcriptionProvider={settings.transcriptionProvider}
               isAnswerBusy={answer.status === 'loading' || meetingIsAnalyzing}
               analysisRequestId={transcriptAnalysisRequestId}

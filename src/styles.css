@@ -400,6 +400,20 @@ kbd {
 .meeting-status { display: flex; align-items: center; gap: 9px; padding: 15px 0; color: var(--muted); font-size: 11px; }
 .meeting-status strong { color: var(--ink); font-size: 12px; }
 .meeting-status > span:last-child { margin-left: auto; }
+.meeting-usage { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 12px; margin: 0 0 12px; padding: 9px 11px; border: 1px solid rgba(255,255,255,.1); border-radius: 9px; background: rgba(255,255,255,.035); }
+.meeting-usage > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; min-width: 0; }
+.meeting-usage > div strong { color: #e8eeeb; font-size: 10px; }
+.meeting-usage > div span, .meeting-usage > small { color: var(--muted); font-size: 10px; }
+.meeting-usage-cost { grid-column: 2; grid-row: 1 / span 2; color: #8ddbd5; font-size: 13px; font-variant-numeric: tabular-nums; }
+.meeting-usage > small { grid-column: 1; }
+.meeting-connection { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 9px 10px; border-radius: 8px; background: rgba(214,168,97,.1); color: #ead5b1; font-size: 11px; line-height: 1.4; }
+.meeting-connection > svg { flex: 0 0 auto; }
+.meeting-connection > span { flex: 1; }
+.meeting-connection.is-error { background: rgba(255,138,122,.1); color: #ffd0c9; }
+.meeting-connection button { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; min-height: 30px; padding: 0 9px; border: 1px solid rgba(255,255,255,.2); border-radius: 7px; background: rgba(255,255,255,.06); color: inherit; font: inherit; cursor: pointer; }
+.meeting-connection button:disabled { opacity: .6; cursor: wait; }
+.meeting-connection button:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+.meeting-connection .is-spinning { animation: recording-pulse 1s linear infinite; }
 .recording-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 0 5px rgba(255,138,122,.12); animation: recording-pulse 1.4s ease-in-out infinite; }
 .recording-dot.is-paused { background: #d6a861; box-shadow: none; animation: none; }
 .meeting-meters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 0 0 13px; border-bottom: 1px solid rgba(255,255,255,.1); }
