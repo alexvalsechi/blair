@@ -66,6 +66,7 @@ body[data-view='overlay'] { background: transparent; }
 
 .prompt-rail {
   position: absolute;
+  z-index: 2;
   top: clamp(28px, 5vh, 64px);
   left: 50%;
   width: min(760px, calc(100vw - 56px));
@@ -135,6 +136,7 @@ kbd {
 
 .answer-panel {
   position: absolute;
+  z-index: 1;
   top: clamp(122px, 15vh, 170px);
   left: 50%;
   width: min(680px, calc(100vw - 56px));
