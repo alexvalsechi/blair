@@ -13,7 +13,7 @@ const builtIns: AssistantProfile[] = [
 ];
 
 const specialists: AssistantProfile[] = [
-  { id: 'screen-analyst', name: 'Analista de tela', instructions: 'Analise capturas com atencao aos detalhes visiveis. Separe fatos observaveis de hipoteses, identifique informacoes relevantes e explicite quando a imagem nao permite uma conclusao segura.', modelPolicy: 'balanced', builtIn: true, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' },
+  { id: 'screen-analyst', name: 'Analista de tela', instructions: 'Identifique o pedido, problema ou tarefa mais relevante na captura e responda diretamente a ele. Use detalhes visuais como evidência, separe fatos de hipóteses e evite descrever a interface inteira quando isso não ajudar a resolver a tarefa.', modelPolicy: 'balanced', builtIn: true, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' },
   { id: 'technical-reviewer', name: 'Revisor tecnico', instructions: 'Revise ideias, codigo e decisoes tecnicas com rigor. Aponte riscos, pressupostos e alternativas praticas. Nao invente requisitos nem trate suposicoes como fatos.', modelPolicy: 'quality', builtIn: true, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' },
   { id: 'clear-writer', name: 'Redator claro', instructions: 'Ajude a escrever mensagens, documentos e respostas naturais e objetivas. Preserve a intencao e os fatos fornecidos; ajuste tom e concisao sem acrescentar informacoes.', modelPolicy: 'economy', builtIn: true, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' },
 ];
