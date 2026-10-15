@@ -6,7 +6,7 @@ import type {
   PublicSettings,
   SaveSettingsInput,
   ShortcutAction,
-  StreamEvent, HistoryEntry, Diagnostics, MeetingSummaryInput, TranscribeInput, AssistantProfile, SaveAssistantProfileInput, Attachment,
+  StreamEvent, HistoryEntry, Diagnostics, MeetingSummaryInput, TranscribeInput, AlibabaTranscriptionEvent, AssistantProfile, SaveAssistantProfileInput, Attachment,
 } from '../electron/contracts';
 
 declare global {
@@ -14,6 +14,7 @@ declare global {
     persona: {
       getSettings(): Promise<PublicSettings>;
       saveSettings(input: SaveSettingsInput): Promise<PublicSettings>;
+      onSettingsUpdated(callback: (settings: PublicSettings) => void): () => void;
       testConnection(): Promise<AskResult>;
       listModels(): Promise<string[]>;
       listTranscriptionModels(): Promise<string[]>;
@@ -38,6 +39,10 @@ declare global {
       selectAssistantDocuments(): Promise<Attachment[]>;
       diagnostics(): Promise<Diagnostics>;
       transcribeAudio(input: TranscribeInput): Promise<string>;
+      startAlibabaTranscription(): Promise<void>;
+      sendAlibabaAudioFrame(audio: Uint8Array): void;
+      stopAlibabaTranscription(): Promise<void>;
+      onAlibabaTranscriptionEvent(callback: (event: AlibabaTranscriptionEvent) => void): () => void;
       summarizeMeeting(input: MeetingSummaryInput): Promise<AskResult>;
       setOpacity(value: number): Promise<PublicSettings>;
       setClickThrough(enabled: boolean): void;

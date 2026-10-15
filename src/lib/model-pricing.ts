@@ -56,3 +56,11 @@ export function transcriptionModelPrice(modelId: string): string {
     ? `Áudio: ${usd(tokens.input)} entrada · ${usd(tokens.output)} saída / 1M tokens`
     : 'Preço não mapeado · consulte a tabela OpenAI';
 }
+
+export function alibabaTranscriptionModelPrice(workspaceHost: string): string {
+  const beijing = workspaceHost.includes('.cn-beijing.');
+  const input = beijing ? 0.848 : 0.93;
+  const output = beijing ? 0.636 : 0.7;
+  const region = beijing ? 'Pequim' : 'Singapura';
+  return `Entrada US$ ${input.toLocaleString('pt-BR')} + saÃ­da US$ ${output.toLocaleString('pt-BR')} / 1M tokens Â· ${region}`;
+}

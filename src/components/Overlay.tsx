@@ -42,7 +42,7 @@ const initialAnswer: AnswerState = {
 };
 
 export function Overlay() {
-  const [settings, setSettings] = useState({ opacity: 0.86, hasApiKey: false, model: 'gpt-5.5', scale: 1, layoutPosition: 'center' });
+  const [settings, setSettings] = useState({ opacity: 0.86, hasApiKey: false, hasAlibabaTranscriptionApiKey: false, alibabaWorkspaceHost: '', transcriptionProvider: 'openai' as 'openai' | 'alibaba', model: 'gpt-5.5', scale: 1, layoutPosition: 'center' });
   const [promptOpen, setPromptOpen] = useState(false);
   const [prompt, setPrompt] = useState('');
   const [answerOpen, setAnswerOpen] = useState(true);
@@ -96,9 +96,13 @@ export function Overlay() {
 
   useEffect(() => {
     void window.persona.getSettings().then((value) => {
-      setSettings({ opacity: value.opacity, hasApiKey: value.hasApiKey, model: value.model, scale: value.scale, layoutPosition: value.layoutPosition });
+      setSettings({ opacity: value.opacity, hasApiKey: value.hasApiKey, hasAlibabaTranscriptionApiKey: value.hasAlibabaTranscriptionApiKey, alibabaWorkspaceHost: value.alibabaWorkspaceHost, transcriptionProvider: value.transcriptionProvider, model: value.model, scale: value.scale, layoutPosition: value.layoutPosition });
     });
   }, []);
+
+  useEffect(() => window.persona.onSettingsUpdated((value) => {
+    setSettings({ opacity: value.opacity, hasApiKey: value.hasApiKey, hasAlibabaTranscriptionApiKey: value.hasAlibabaTranscriptionApiKey, alibabaWorkspaceHost: value.alibabaWorkspaceHost, transcriptionProvider: value.transcriptionProvider, model: value.model, scale: value.scale, layoutPosition: value.layoutPosition });
+  }), []);
 
   useEffect(() => { void window.persona.listProfiles().then(setProfiles); }, []);
   useEffect(() => { localStorage.setItem('persona.activeProfile', activeProfileId); }, [activeProfileId]);
@@ -371,6 +375,9 @@ export function Overlay() {
           {meetingOpen && <div className="answer-copy meeting-answer-copy" hidden={responseTab !== 'transcript'}>
             <MeetingPanel
               hasApiKey={settings.hasApiKey}
+              hasAlibabaApiKey={settings.hasAlibabaTranscriptionApiKey}
+              hasAlibabaWorkspaceHost={Boolean(settings.alibabaWorkspaceHost)}
+              transcriptionProvider={settings.transcriptionProvider}
               isAnswerBusy={answer.status === 'loading' || meetingIsAnalyzing}
               analysisRequestId={transcriptAnalysisRequestId}
               onSessionActiveChange={setMeetingActive}

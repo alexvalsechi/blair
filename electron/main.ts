@@ -12,14 +12,16 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import type { AskInput, Attachment, MeetingSummaryInput, SaveAssistantProfileInput, SaveSettingsInput, ShortcutAction, TranscribeInput } from './contracts.js';
+import type { AskInput, Attachment, MeetingSummaryInput, SaveAssistantProfileInput, SaveSettingsInput, ShortcutAction, TranscribeInput, AlibabaTranscriptionEvent } from './contracts.js';
 import { askOpenAI, listAvailableModels, listAvailableTranscriptionModels, streamOpenAI, summarizeMeetingOpenAI, transcribeOpenAI } from './openai-service.js';
+import { sendAlibabaAudio, startAlibabaTranscription, stopAlibabaTranscription } from './alibaba-asr-service.js';
 import { appendHistory, clearHistory, deleteHistoryEntry, listHistory, searchHistory } from './history-store.js';
 import { deleteProfile, getProfile, listProfiles, saveProfile } from './assistant-store.js';
 import { resolveProfilePolicy } from './validation.js';
 import {
   getPublicSettings,
   readApiKey,
+  readAlibabaTranscriptionApiKey,
   saveSettings,
   setOpacity as persistOpacity,
 } from './settings-store.js';
@@ -109,6 +111,7 @@ function createOverlayWindow(): BrowserWindow {
   });
   win.on('closed', () => {
     overlayWindow = null;
+    void stopAlibabaTranscription();
   });
   return win;
 }
@@ -206,6 +209,7 @@ function registerIpc(): void {
     overlayWindow?.setOpacity(saved.opacity);
     overlayWindow?.setContentProtection(saved.contentProtection);
     registerShortcuts(saved.shortcuts);
+    overlayWindow?.webContents.send('settings:updated', saved);
     return saved;
   });
   ipcMain.handle('settings:test', async () => {
@@ -380,6 +384,26 @@ function registerIpc(): void {
     const apiKey = await readApiKey();
     const settings = await getPublicSettings();
     return transcribeOpenAI(apiKey, settings.transcriptionModel, input.audio, String(input.mimeType || 'audio/webm'));
+  });
+  ipcMain.handle('audio:alibaba-start', async (event) => {
+    if (!overlayWindow || event.sender !== overlayWindow.webContents) throw new Error('Janela nÃ£o autorizada para transcriÃ§Ã£o.');
+    const settings = await getPublicSettings();
+    if (!settings.alibabaWorkspaceHost) throw new Error('Informe o API Host da Alibaba na tela Modelos.');
+    const apiKey = await readAlibabaTranscriptionApiKey();
+    await startAlibabaTranscription(apiKey, settings.alibabaWorkspaceHost, (result: AlibabaTranscriptionEvent) => {
+      if (!overlayWindow?.isDestroyed()) overlayWindow?.webContents.send('audio:alibaba-event', result);
+    });
+  });
+  ipcMain.on('audio:alibaba-frame', (event, audio: Uint8Array) => {
+    if (!overlayWindow || event.sender !== overlayWindow.webContents || !(audio instanceof Uint8Array)) return;
+    try { sendAlibabaAudio(audio); }
+    catch (error) {
+      if (!overlayWindow.isDestroyed()) overlayWindow.webContents.send('audio:alibaba-event', { type: 'error', message: error instanceof Error ? error.message : 'Falha ao enviar Ã¡udio para a Alibaba.' } satisfies AlibabaTranscriptionEvent);
+    }
+  });
+  ipcMain.handle('audio:alibaba-stop', async (event) => {
+    if (!overlayWindow || event.sender !== overlayWindow.webContents) return;
+    await stopAlibabaTranscription();
   });
   ipcMain.handle('meeting:summarize', async (_event, input: MeetingSummaryInput) => {
     const settings = await getPublicSettings();

@@ -6,8 +6,11 @@ import { clampMaxOutputTokens, clampOpacity, normalizeModel, normalizeModelPolic
 
 type StoredSettings = {
   encryptedApiKey?: string;
+  encryptedAlibabaTranscriptionApiKey?: string;
   model: string;
   transcriptionModel: string;
+  transcriptionProvider: 'openai' | 'alibaba';
+  alibabaWorkspaceHost: string;
   opacity: number;
   contentProtection: boolean;
   historyEnabled: boolean;
@@ -29,6 +32,8 @@ export const defaultShortcuts: Record<ShortcutAction, string> = {
 const defaults: StoredSettings = {
   model: 'gpt-5.5',
   transcriptionModel: 'gpt-4o-mini-transcribe',
+  transcriptionProvider: 'openai',
+  alibabaWorkspaceHost: '',
   opacity: 0.86,
   contentProtection: true,
   historyEnabled: false,
@@ -69,8 +74,11 @@ export async function getPublicSettings(): Promise<PublicSettings> {
   const stored = await readStored();
   return {
     hasApiKey: Boolean(stored.encryptedApiKey),
+    hasAlibabaTranscriptionApiKey: Boolean(stored.encryptedAlibabaTranscriptionApiKey),
     model: stored.model,
     transcriptionModel: stored.transcriptionModel,
+    transcriptionProvider: stored.transcriptionProvider,
+    alibabaWorkspaceHost: stored.alibabaWorkspaceHost,
     opacity: stored.opacity,
     contentProtection: stored.contentProtection,
     historyEnabled: stored.historyEnabled,
@@ -89,6 +97,8 @@ export async function saveSettings(input: SaveSettingsInput): Promise<PublicSett
     ...stored,
     model: normalizeModel(input.model),
     transcriptionModel: normalizeModel(input.transcriptionModel ?? stored.transcriptionModel),
+    transcriptionProvider: input.transcriptionProvider ?? stored.transcriptionProvider,
+    alibabaWorkspaceHost: normalizeAlibabaWorkspaceHost(input.alibabaWorkspaceHost ?? stored.alibabaWorkspaceHost),
     contentProtection: Boolean(input.contentProtection),
     historyEnabled: input.historyEnabled ?? stored.historyEnabled,
     shortcuts: { ...stored.shortcuts, ...(input.shortcuts ?? {}) },
@@ -110,8 +120,30 @@ export async function saveSettings(input: SaveSettingsInput): Promise<PublicSett
     next.encryptedApiKey = safeStorage.encryptString(input.apiKey.trim()).toString('base64');
   }
 
+  if (input.alibabaTranscriptionApiKey?.trim()) {
+    if (!safeStorage.isEncryptionAvailable()) {
+      throw new Error('A proteÃ§Ã£o de credenciais do Windows nÃ£o estÃ¡ disponÃ­vel. A chave Alibaba nÃ£o foi salva.');
+    }
+    next.encryptedAlibabaTranscriptionApiKey = safeStorage.encryptString(input.alibabaTranscriptionApiKey.trim()).toString('base64');
+  }
+
   await writeStored(next);
   return getPublicSettings();
+}
+
+function normalizeAlibabaWorkspaceHost(value: string): string {
+  const input = value.trim();
+  if (!input) return '';
+  let host: string;
+  try {
+    host = new URL(input.includes('://') ? input : `https://${input}`).hostname;
+  } catch {
+    throw new Error('Informe um API Host válido do Alibaba Model Studio.');
+  }
+  if (!/^ws-[a-z0-9-]+\.(?:ap-southeast-1|cn-beijing)\.maas\.aliyuncs\.com$/i.test(host)) {
+    throw new Error('Informe o API Host da Alibaba no formato ws-…ap-southeast-1.maas.aliyuncs.com ou ws-…cn-beijing.maas.aliyuncs.com.');
+  }
+  return host.toLowerCase();
 }
 
 export async function setOpacity(opacity: number): Promise<PublicSettings> {
@@ -130,5 +162,16 @@ export async function readApiKey(): Promise<string> {
     throw new Error('O Windows não disponibilizou a proteção necessária para ler a chave.');
   }
   return safeStorage.decryptString(Buffer.from(stored.encryptedApiKey, 'base64'));
+}
+
+export async function readAlibabaTranscriptionApiKey(): Promise<string> {
+  const stored = await readStored();
+  if (!stored.encryptedAlibabaTranscriptionApiKey) {
+    throw new Error('Configure a chave de transcriÃ§Ã£o da Alibaba Cloud na tela Modelos.');
+  }
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error('O Windows nÃ£o disponibilizou a proteÃ§Ã£o necessÃ¡ria para ler a chave Alibaba.');
+  }
+  return safeStorage.decryptString(Buffer.from(stored.encryptedAlibabaTranscriptionApiKey, 'base64'));
 }
 

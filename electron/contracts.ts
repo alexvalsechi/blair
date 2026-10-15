@@ -1,7 +1,10 @@
 export type PublicSettings = {
   hasApiKey: boolean;
+  hasAlibabaTranscriptionApiKey: boolean;
   model: string;
   transcriptionModel: string;
+  transcriptionProvider: 'openai' | 'alibaba';
+  alibabaWorkspaceHost: string;
   opacity: number;
   contentProtection: boolean;
   historyEnabled: boolean;
@@ -15,8 +18,11 @@ export type PublicSettings = {
 
 export type SaveSettingsInput = {
   apiKey?: string;
+  alibabaTranscriptionApiKey?: string;
+  alibabaWorkspaceHost?: string;
   model: string;
   transcriptionModel?: string;
+  transcriptionProvider?: 'openai' | 'alibaba';
   contentProtection: boolean;
   historyEnabled?: boolean;
   shortcuts?: Partial<Record<ShortcutAction, string>>;
@@ -118,6 +124,10 @@ export type TranscribeInput = {
   mimeType: string;
   source: AudioSource;
 };
+
+export type AlibabaTranscriptionEvent =
+  | { type: 'result'; sentenceId: number; sentenceEnd: boolean; text: string }
+  | { type: 'error'; message: string };
 
 export type TranscriptSegment = {
   id: string;

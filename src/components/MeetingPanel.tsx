@@ -1,10 +1,13 @@
 import { AudioLines, CircleStop, Mic, MicOff, Sparkles, Volume2, VolumeX } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AudioSource, TranscriptSegment } from '../../electron/contracts';
+import type { AlibabaTranscriptionEvent, AudioSource, TranscriptSegment } from '../../electron/contracts';
 import { errorMessage } from '../lib/errors';
 
 type Props = {
   hasApiKey: boolean;
+  hasAlibabaApiKey: boolean;
+  hasAlibabaWorkspaceHost: boolean;
+  transcriptionProvider: 'openai' | 'alibaba';
   isAnswerBusy: boolean;
   analysisRequestId: number;
   onSummary(text: string): void;
@@ -54,7 +57,7 @@ function AudioChannelMeter({ channel, level, muted, onToggleMute }: {
   );
 }
 
-export function MeetingPanel({ hasApiKey, isAnswerBusy, analysisRequestId, onSummary, onSessionActiveChange, onAnalysisStateChange }: Props) {
+export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceHost, transcriptionProvider, isAnswerBusy, analysisRequestId, onSummary, onSessionActiveChange, onAnalysisStateChange }: Props) {
   const [state, setState] = useState<MeetingState>('setup');
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const [pending, setPending] = useState(0);
@@ -80,6 +83,31 @@ export function MeetingPanel({ hasApiKey, isAnswerBusy, analysisRequestId, onSum
   const autoStartRef = useRef(false);
   const autoStartTimerRef = useRef<number | null>(null);
   const handledAnalysisRequestRef = useRef(analysisRequestId);
+  const alibabaSessionActiveRef = useRef(false);
+  const alibabaAudioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const alibabaProcessorRef = useRef<ScriptProcessorNode | null>(null);
+  const alibabaMuteRef = useRef<GainNode | null>(null);
+
+  const canTranscribe = transcriptionProvider === 'alibaba' ? hasAlibabaApiKey && hasAlibabaWorkspaceHost : hasApiKey;
+
+  useEffect(() => window.persona.onAlibabaTranscriptionEvent((event: AlibabaTranscriptionEvent) => {
+    if (event.type === 'error') { setError(event.message); return; }
+    const text = event.text.trim();
+    if (!text) return;
+    const id = `alibaba-${event.sentenceId}`;
+    const next = [...transcriptRef.current];
+    const index = next.findIndex((segment) => segment.id === id);
+    const segment: TranscriptSegment = {
+      id,
+      createdAt: index >= 0 ? next[index].createdAt : new Date().toISOString(),
+      source: 'mixed',
+      text,
+    };
+    if (index >= 0) next[index] = segment;
+    else next.push(segment);
+    transcriptRef.current = next;
+    setSegments(next);
+  }), []);
 
   const transcribe = useCallback(async (blob: Blob, generation: number) => {
     if (blob.size < 1_000) return;
@@ -128,6 +156,16 @@ export function MeetingPanel({ hasApiKey, isAnswerBusy, analysisRequestId, onSum
 
   const releaseMedia = useCallback(() => {
     runningRef.current = false;
+    alibabaProcessorRef.current?.disconnect();
+    alibabaAudioSourceRef.current?.disconnect();
+    alibabaMuteRef.current?.disconnect();
+    alibabaProcessorRef.current = null;
+    alibabaAudioSourceRef.current = null;
+    alibabaMuteRef.current = null;
+    if (alibabaSessionActiveRef.current) {
+      alibabaSessionActiveRef.current = false;
+      void window.persona.stopAlibabaTranscription();
+    }
     if (timerRef.current !== null) window.clearTimeout(timerRef.current);
     timerRef.current = null;
     if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
@@ -164,7 +202,7 @@ export function MeetingPanel({ hasApiKey, isAnswerBusy, analysisRequestId, onSum
 
   const begin = useCallback(async () => {
     if (startInFlightRef.current || state === 'starting' || state === 'recording' || state === 'ending') return;
-    if (!hasApiKey) { setError('Configure a chave OpenAI antes de iniciar a transcrição.'); return; }
+    if (!canTranscribe) { setError(transcriptionProvider === 'alibaba' ? 'Configure a chave Alibaba e o API Host na aba Transcrição da tela Modelos.' : 'Configure a chave OpenAI antes de iniciar a transcrição.'); return; }
     startInFlightRef.current = true;
     setState('starting');
     onSessionActiveChange(true);
@@ -172,7 +210,7 @@ export function MeetingPanel({ hasApiKey, isAnswerBusy, analysisRequestId, onSum
     const startGeneration = generationRef.current;
     try {
       const streams: MediaStream[] = [];
-      const context = new AudioContext();
+      const context = new AudioContext(transcriptionProvider === 'alibaba' ? { sampleRate: 16_000 } : undefined);
       audioContextRef.current = context;
       await context.resume();
       if (startGeneration !== generationRef.current) { releaseMedia(); return; }
@@ -219,10 +257,34 @@ export function MeetingPanel({ hasApiKey, isAnswerBusy, analysisRequestId, onSum
       });
       sourceLabelRef.current = 'mixed';
       mixedStreamRef.current = destination.stream;
+      if (transcriptionProvider === 'alibaba') {
+        await window.persona.startAlibabaTranscription();
+        alibabaSessionActiveRef.current = true;
+        const mixedSource = context.createMediaStreamSource(destination.stream);
+        const processor = context.createScriptProcessor(2_048, 1, 1);
+        const mute = context.createGain();
+        mute.gain.value = 0;
+        processor.onaudioprocess = (event) => {
+          if (!runningRef.current) return;
+          const samples = event.inputBuffer.getChannelData(0);
+          const pcm = new Int16Array(samples.length);
+          for (let index = 0; index < samples.length; index += 1) {
+            const sample = Math.max(-1, Math.min(1, samples[index]));
+            pcm[index] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+          }
+          window.persona.sendAlibabaAudioFrame(new Uint8Array(pcm.buffer));
+        };
+        mixedSource.connect(processor);
+        processor.connect(mute);
+        mute.connect(context.destination);
+        alibabaAudioSourceRef.current = mixedSource;
+        alibabaProcessorRef.current = processor;
+        alibabaMuteRef.current = mute;
+      }
       runningRef.current = true;
       setState('recording');
       startMetering();
-      startSegment();
+      if (transcriptionProvider === 'openai') startSegment();
     } catch (reason) {
       releaseMedia();
       setState('setup');
@@ -231,10 +293,10 @@ export function MeetingPanel({ hasApiKey, isAnswerBusy, analysisRequestId, onSum
     } finally {
       startInFlightRef.current = false;
     }
-  }, [hasApiKey, onSessionActiveChange, releaseMedia, startMetering, startSegment, state]);
+  }, [canTranscribe, onSessionActiveChange, releaseMedia, startMetering, startSegment, state, transcriptionProvider]);
 
   useEffect(() => {
-    if (!hasApiKey || autoStartRef.current) return;
+    if (!canTranscribe || autoStartRef.current) return;
     autoStartTimerRef.current = window.setTimeout(() => {
       autoStartRef.current = true;
       void begin();
@@ -243,7 +305,7 @@ export function MeetingPanel({ hasApiKey, isAnswerBusy, analysisRequestId, onSum
       if (autoStartTimerRef.current !== null) window.clearTimeout(autoStartTimerRef.current);
       autoStartTimerRef.current = null;
     };
-  }, [begin, hasApiKey]);
+  }, [begin, canTranscribe]);
 
   const toggleChannelMuted = (channel: AudioChannel) => {
     const nextMuted = !mutedChannels[channel];
@@ -262,6 +324,13 @@ export function MeetingPanel({ hasApiKey, isAnswerBusy, analysisRequestId, onSum
     const stopped = recorder?.state === 'recording'
       ? new Promise<void>((resolve) => recorder.addEventListener('stop', () => resolve(), { once: true }))
       : Promise.resolve();
+    if (alibabaSessionActiveRef.current) {
+      alibabaProcessorRef.current?.disconnect();
+      alibabaAudioSourceRef.current?.disconnect();
+      alibabaMuteRef.current?.disconnect();
+      alibabaSessionActiveRef.current = false;
+      await window.persona.stopAlibabaTranscription();
+    }
     releaseMedia();
     await stopped;
     await transcriptionChainRef.current;
@@ -270,7 +339,7 @@ export function MeetingPanel({ hasApiKey, isAnswerBusy, analysisRequestId, onSum
   };
 
   const analyzeTranscript = async () => {
-    if (isAnalyzing || isAnswerBusy || (state !== 'recording' && state !== 'finished')) return;
+    if (isAnalyzing || isAnswerBusy || !hasApiKey || (state !== 'recording' && state !== 'finished')) return;
     const transcript = transcriptRef.current.map((segment) => segment.text).join('\n');
     if (!transcript.trim()) { setError('Ainda não há transcrição disponível para analisar.'); return; }
     setIsAnalyzing(true);
@@ -320,11 +389,11 @@ export function MeetingPanel({ hasApiKey, isAnswerBusy, analysisRequestId, onSum
           </section>}
           <div className="transcript" aria-live="polite">
             {segments.map((segment) => <p key={segment.id}><time>{new Date(segment.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</time>{segment.text}</p>)}
-            {!segments.length && <p className="transcript-empty">A transcrição aparecerá aqui em blocos de cerca de 12 segundos. Você pode abrir a aba Respostas para fazer perguntas sem encerrar a sessão.</p>}
+            {!segments.length && <p className="transcript-empty">{transcriptionProvider === 'alibaba' ? 'A transcrição ao vivo do Qwen aparecerá aqui enquanto você fala. Você pode abrir a aba Respostas sem encerrar a sessão.' : 'A transcrição aparecerá aqui em blocos de cerca de 12 segundos. Você pode abrir a aba Respostas sem encerrar a sessão.'}</p>}
           </div>
           {error && <p className="meeting-error" role="alert">{error}</p>}
           <footer className="meeting-controls">
-            {(state === 'recording' || state === 'finished') && <button className="meeting-primary" type="button" disabled={!segments.length || pending > 0 || isAnalyzing || isAnswerBusy} onClick={() => void analyzeTranscript()}><Sparkles size={15} />{isAnalyzing ? 'Analisando transcrição…' : 'Gerar análise'}</button>}
+            {(state === 'recording' || state === 'finished') && <button className="meeting-primary" type="button" disabled={!hasApiKey || !segments.length || pending > 0 || isAnalyzing || isAnswerBusy} title={!hasApiKey ? 'Configure também a chave OpenAI para gerar análises.' : undefined} onClick={() => void analyzeTranscript()}><Sparkles size={15} />{isAnalyzing ? 'Analisando transcrição…' : 'Gerar análise'}</button>}
             {state === 'recording' && <button className="discard-button" type="button" onClick={() => void endSession()}><CircleStop size={16} /> Encerrar sessão</button>}
             {state === 'ending' && <button className="discard-button" type="button" disabled><CircleStop size={16} /> Finalizando…</button>}
             {state === 'finished' && <button type="button" onClick={restartSession}><AudioLines size={15} /> Começar outra sessão</button>}

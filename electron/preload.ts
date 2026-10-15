@@ -7,13 +7,18 @@ import type {
   PublicSettings,
   SaveSettingsInput,
   ShortcutAction,
-  StreamEvent, HistoryEntry, Diagnostics, MeetingSummaryInput, TranscribeInput, AssistantProfile, SaveAssistantProfileInput, Attachment,
+  StreamEvent, HistoryEntry, Diagnostics, MeetingSummaryInput, TranscribeInput, AlibabaTranscriptionEvent, AssistantProfile, SaveAssistantProfileInput, Attachment,
 } from './contracts.js';
 
 contextBridge.exposeInMainWorld('persona', {
   getSettings: (): Promise<PublicSettings> => ipcRenderer.invoke('settings:get'),
   saveSettings: (input: SaveSettingsInput): Promise<PublicSettings> =>
     ipcRenderer.invoke('settings:save', input),
+  onSettingsUpdated: (callback: (settings: PublicSettings) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, value: PublicSettings) => callback(value);
+    ipcRenderer.on('settings:updated', listener);
+    return () => ipcRenderer.removeListener('settings:updated', listener);
+  },
   testConnection: (): Promise<AskResult> => ipcRenderer.invoke('settings:test'),
   listModels: (): Promise<string[]> => ipcRenderer.invoke('models:list'),
   listTranscriptionModels: (): Promise<string[]> => ipcRenderer.invoke('models:transcription-list'),
@@ -42,6 +47,14 @@ contextBridge.exposeInMainWorld('persona', {
   selectAssistantDocuments: (): Promise<Attachment[]> => ipcRenderer.invoke('assistant-documents:select'),
   diagnostics: (): Promise<Diagnostics> => ipcRenderer.invoke('privacy:diagnose'),
   transcribeAudio: (input: TranscribeInput): Promise<string> => ipcRenderer.invoke('audio:transcribe', input),
+  startAlibabaTranscription: (): Promise<void> => ipcRenderer.invoke('audio:alibaba-start'),
+  sendAlibabaAudioFrame: (audio: Uint8Array): void => ipcRenderer.send('audio:alibaba-frame', audio),
+  stopAlibabaTranscription: (): Promise<void> => ipcRenderer.invoke('audio:alibaba-stop'),
+  onAlibabaTranscriptionEvent: (callback: (event: AlibabaTranscriptionEvent) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, value: AlibabaTranscriptionEvent) => callback(value);
+    ipcRenderer.on('audio:alibaba-event', listener);
+    return () => ipcRenderer.removeListener('audio:alibaba-event', listener);
+  },
   summarizeMeeting: (input: MeetingSummaryInput): Promise<AskResult> => ipcRenderer.invoke('meeting:summarize', input),
   setOpacity: (value: number): Promise<PublicSettings> => ipcRenderer.invoke('overlay:set-opacity', value),
   setClickThrough: (enabled: boolean): void => ipcRenderer.send('overlay:set-click-through', enabled),
