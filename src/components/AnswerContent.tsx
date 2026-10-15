@@ -1,4 +1,6 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 type AnswerPart = { type: 'text'; value: string } | { type: 'd2'; value: string };
 
@@ -112,27 +114,6 @@ function splitAnswer(text: string): AnswerPart[] {
   return parts;
 }
 
-function renderInlineMarkdown(text: string): ReactNode[] {
-  const parts: ReactNode[] = [];
-  const markdown = /(\*\*[^*\n]+\*\*|`[^`\n]+`|\*[^*\n]+\*)/g;
-  let cursor = 0;
-  let key = 0;
-
-  for (const match of text.matchAll(markdown)) {
-    const index = match.index ?? 0;
-    if (index > cursor) parts.push(text.slice(cursor, index));
-
-    const value = match[0];
-    if (value.startsWith('**')) parts.push(<strong key={key++}>{value.slice(2, -2)}</strong>);
-    else if (value.startsWith('`')) parts.push(<code key={key++}>{value.slice(1, -1)}</code>);
-    else parts.push(<em key={key++}>{value.slice(1, -1)}</em>);
-    cursor = index + value.length;
-  }
-
-  if (cursor < text.length) parts.push(text.slice(cursor));
-  return parts;
-}
-
 function D2Diagram({ source }: { source: string }) {
   const [svgMarkup, setSvgMarkup] = useState('');
   const [error, setError] = useState('');
@@ -194,9 +175,9 @@ export function AnswerContent({ text }: { text: string }) {
       {splitAnswer(text).map((part, index) => part.type === 'd2' ? (
         <D2Diagram key={`${index}-${part.value}`} source={part.value} />
       ) : (
-        part.value.split(/\n{2,}/).filter(Boolean).map((paragraph, paragraphIndex) => (
-          <p key={`${index}-${paragraphIndex}`}>{renderInlineMarkdown(paragraph)}</p>
-        ))
+        <div className="answer-markdown" key={`${index}-${part.value}`}>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{part.value}</ReactMarkdown>
+        </div>
       ))}
     </>
   );

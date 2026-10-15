@@ -202,6 +202,20 @@ kbd {
 
 .answer-copy p { max-width: 68ch; margin: 0 0 13px; white-space: pre-wrap; }
 .answer-copy p:last-child { margin-bottom: 0; }
+.answer-markdown > :first-child { margin-top: 0; }
+.answer-markdown > :last-child { margin-bottom: 0; }
+.answer-markdown h1, .answer-markdown h2, .answer-markdown h3, .answer-markdown h4 { max-width: 68ch; margin: 18px 0 8px; line-height: 1.35; }
+.answer-markdown h1 { font-size: 1.35em; }
+.answer-markdown h2 { font-size: 1.2em; }
+.answer-markdown h3, .answer-markdown h4 { font-size: 1.08em; }
+.answer-markdown ul, .answer-markdown ol { max-width: 68ch; margin: 0 0 13px; padding-left: 1.5em; }
+.answer-markdown li { padding-left: .2em; margin: 3px 0; }
+.answer-markdown blockquote { max-width: 68ch; margin: 0 0 13px; padding-left: 12px; color: rgba(242,243,239,.82); border-left: 2px solid rgba(255,255,255,.22); }
+.answer-markdown :not(pre) > code { padding: 1px 4px; border-radius: 4px; background: rgba(255,255,255,.1); font-family: var(--font-mono); font-size: .92em; }
+.answer-markdown pre { max-width: 100%; overflow: auto; padding: 11px 13px; border-radius: 8px; background: rgba(0,0,0,.28); }
+.answer-markdown pre code { font-family: var(--font-mono); font-size: .9em; white-space: pre; }
+.answer-markdown table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; margin: 0 0 13px; }
+.answer-markdown th, .answer-markdown td { padding: 6px 9px; border: 1px solid rgba(255,255,255,.16); text-align: left; }
 .answer-history-divider { height: 1px; margin: 19px 0; border: 0; background: rgba(255,255,255,.15); }
 .meeting-answer-copy { padding-top: 17px; }
 .meeting-session { display: flex; min-height: 100%; flex-direction: column; }

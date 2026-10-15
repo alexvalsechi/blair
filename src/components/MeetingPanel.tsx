@@ -6,6 +6,7 @@ import { errorMessage } from '../lib/errors';
 type Props = {
   hasApiKey: boolean;
   isAnswerBusy: boolean;
+  analysisRequestId: number;
   onSummary(text: string): void;
   onSessionActiveChange(active: boolean): void;
   onAnalysisStateChange(analyzing: boolean): void;
@@ -53,7 +54,7 @@ function AudioChannelMeter({ channel, level, muted, onToggleMute }: {
   );
 }
 
-export function MeetingPanel({ hasApiKey, isAnswerBusy, onSummary, onSessionActiveChange, onAnalysisStateChange }: Props) {
+export function MeetingPanel({ hasApiKey, isAnswerBusy, analysisRequestId, onSummary, onSessionActiveChange, onAnalysisStateChange }: Props) {
   const [state, setState] = useState<MeetingState>('setup');
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const [pending, setPending] = useState(0);
@@ -78,6 +79,7 @@ export function MeetingPanel({ hasApiKey, isAnswerBusy, onSummary, onSessionActi
   const startInFlightRef = useRef(false);
   const autoStartRef = useRef(false);
   const autoStartTimerRef = useRef<number | null>(null);
+  const handledAnalysisRequestRef = useRef(analysisRequestId);
 
   const transcribe = useCallback(async (blob: Blob, generation: number) => {
     if (blob.size < 1_000) return;
@@ -284,6 +286,12 @@ export function MeetingPanel({ hasApiKey, isAnswerBusy, onSummary, onSessionActi
       onAnalysisStateChange(false);
     }
   };
+
+  useEffect(() => {
+    if (analysisRequestId === handledAnalysisRequestRef.current) return;
+    handledAnalysisRequestRef.current = analysisRequestId;
+    void analyzeTranscript();
+  }, [analysisRequestId, analyzeTranscript]);
 
   const restartSession = () => {
     generationRef.current += 1;

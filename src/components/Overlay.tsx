@@ -61,6 +61,7 @@ export function Overlay() {
   const [meetingOpen, setMeetingOpen] = useState(false);
   const [meetingActive, setMeetingActive] = useState(false);
   const [meetingIsAnalyzing, setMeetingIsAnalyzing] = useState(false);
+  const [transcriptAnalysisRequestId, setTranscriptAnalysisRequestId] = useState(0);
   const [contextOpen, setContextOpen] = useState(false);
   const [agentMenuOpen, setAgentMenuOpen] = useState(false);
   const agentSwitcherRef = useRef<HTMLDivElement>(null);
@@ -215,7 +216,13 @@ export function Overlay() {
         else openPrompt();
       }
       if (action === 'capture') void openCapture();
-      if (action === 'meeting') openMeeting();
+      if (action === 'meeting') {
+        if (meetingOpen) {
+          setResponseTab('transcript');
+          setTranscriptAnalysisRequestId((requestId) => requestId + 1);
+        }
+        else openMeeting();
+      }
       if (action === 'toggle-dock') setDockVisible((visible) => !visible);
       if (action === 'toggle-always-on-top') setAlwaysOnTop((value) => !value);
       if (action === 'toggle-interaction') {
@@ -231,7 +238,7 @@ export function Overlay() {
         );
       }
     });
-  }, [openCapture, openMeeting, openPrompt, prompt, promptOpen, submit]);
+  }, [meetingOpen, openCapture, openMeeting, openPrompt, prompt, promptOpen, submit]);
 
   const changeOpacity = async (value: number) => {
     const saved = await window.persona.setOpacity(value);
@@ -365,6 +372,7 @@ export function Overlay() {
             <MeetingPanel
               hasApiKey={settings.hasApiKey}
               isAnswerBusy={answer.status === 'loading' || meetingIsAnalyzing}
+              analysisRequestId={transcriptAnalysisRequestId}
               onSessionActiveChange={setMeetingActive}
               onAnalysisStateChange={setMeetingIsAnalyzing}
               onSummary={(text) => {
