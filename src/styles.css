@@ -148,6 +148,7 @@ kbd {
   grid-template-rows: auto minmax(0, 1fr) auto;
   animation: answer-settle 340ms cubic-bezier(.16,.84,.24,1);
 }
+.answer-panel.has-meeting-tabs { grid-template-rows: auto auto minmax(0, 1fr) auto; }
 
 .answer-header,
 .answer-footer {
@@ -161,6 +162,17 @@ kbd {
 .answer-title { display: inline-flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 700; }
 .answer-title svg { color: var(--teal); }
 .answer-actions { display: inline-flex; gap: 6px; }
+.answer-session-indicator { display: inline-flex; align-items: center; gap: 8px; color: #8ddbd5; font-size: 10px; font-weight: 700; }
+.answer-session-indicator .recording-dot { width: 7px; height: 7px; box-shadow: 0 0 0 4px rgba(255,138,122,.1); }
+.answer-tabs { display: flex; align-items: stretch; gap: 4px; min-height: 38px; border-bottom: 1px solid rgba(255,255,255,.11); }
+.answer-tabs button { position: relative; display: inline-flex; align-items: center; gap: 7px; padding: 0 11px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font: inherit; font-size: 10px; font-weight: 700; cursor: pointer; }
+.answer-tabs button:hover { color: var(--ink); }
+.answer-tabs button.is-active { border-bottom-color: var(--teal); color: var(--ink); }
+.answer-tabs button svg { color: var(--teal); }
+.answer-tabs button small { display: grid; place-items: center; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 10px; background: rgba(255,255,255,.1); color: var(--ink); font-size: 9px; }
+.answer-tab-live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 0 4px rgba(255,138,122,.1); }
+.answer-tabs button:focus-visible { outline: 2px solid var(--teal); outline-offset: -2px; }
+.answer-copy[hidden] { display: none; }
 
 .icon-button {
   display: grid;
@@ -190,6 +202,13 @@ kbd {
 
 .answer-copy p { max-width: 68ch; margin: 0 0 13px; white-space: pre-wrap; }
 .answer-copy p:last-child { margin-bottom: 0; }
+.answer-history-divider { height: 1px; margin: 19px 0; border: 0; background: rgba(255,255,255,.15); }
+.meeting-answer-copy { padding-top: 17px; }
+.meeting-session { display: flex; min-height: 100%; flex-direction: column; }
+.meeting-session .meeting-setup { padding-top: 0; }
+.meeting-session .meeting-status { padding-top: 0; }
+.meeting-session .transcript { flex: 1; max-height: min(410px, 48vh); }
+.meeting-session .meeting-controls { margin-top: 10px; }
 .answer-error .answer-copy { color: #ffd0c9; }
 
 .d2-diagram-card { max-width: 100%; margin: 12px 0 16px; padding: 10px; overflow: hidden; border: 1px solid rgba(255,255,255,.12); border-radius: 12px; background: rgba(255,255,255,.94); }

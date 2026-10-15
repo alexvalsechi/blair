@@ -1,5 +1,6 @@
 import {
   ArrowUp,
+  AudioLines,
   Bot,
   Camera,
   Check,
@@ -32,6 +33,8 @@ type AnswerState =
   | { status: 'loading'; text: string }
   | { status: 'success'; text: string; requestId?: string }
   | { status: 'error'; text: string };
+type AnswerHistoryItem = { id: string; text: string };
+type ResponseTab = 'transcript' | 'answers';
 
 const initialAnswer: AnswerState = {
   status: 'idle',
@@ -51,9 +54,13 @@ export function Overlay() {
   const [alwaysOnTop, setAlwaysOnTop] = useState(true);
   const [interactionMode, setInteractionMode] = useState(false);
   const [answer, setAnswer] = useState<AnswerState>(initialAnswer);
+  const [answerHistory, setAnswerHistory] = useState<AnswerHistoryItem[]>([]);
+  const [responseTab, setResponseTab] = useState<ResponseTab>('answers');
   const [isCapturing, setIsCapturing] = useState(false);
   const captureInFlight = useRef(false);
   const [meetingOpen, setMeetingOpen] = useState(false);
+  const [meetingActive, setMeetingActive] = useState(false);
+  const [meetingIsAnalyzing, setMeetingIsAnalyzing] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
   const [agentMenuOpen, setAgentMenuOpen] = useState(false);
   const agentSwitcherRef = useRef<HTMLDivElement>(null);
@@ -128,9 +135,15 @@ export function Overlay() {
     requestAnimationFrame(() => inputRef.current?.focus());
   }, []);
 
+  const openMeeting = useCallback(() => {
+    setMeetingOpen(true);
+    setAnswerOpen(true);
+    setResponseTab('transcript');
+  }, []);
+
   const submit = useCallback(
     async (imageDataUrl?: string) => {
-      if (answer.status === 'loading' || (captureInFlight.current && !imageDataUrl)) return;
+      if (answer.status === 'loading' || meetingIsAnalyzing || (captureInFlight.current && !imageDataUrl)) return;
       if (!settings.hasApiKey) {
         setAnswerOpen(true);
         setAnswer({ status: 'error', text: 'Configure sua chave OpenAI para começar.' });
@@ -142,7 +155,11 @@ export function Overlay() {
         return;
       }
 
+      if (answer.status === 'success' && answer.text.trim()) {
+        setAnswerHistory((current) => [...current, { id: crypto.randomUUID(), text: answer.text }]);
+      }
       setAnswerOpen(true);
+      setResponseTab('answers');
       setAnswer({ status: 'loading', text: imageDataUrl ? 'Analisando a captura…' : 'Pensando na sua pergunta…' });
       try {
         window.persona.askStream({ prompt: prompt.trim(), imageDataUrl, profileId: activeProfileId, attachments, contextEntries: selectedMemory });
@@ -155,7 +172,7 @@ export function Overlay() {
         setAnswer({ status: 'error', text: errorMessage(error) });
       }
     },
-    [activeProfileId, answer.status, attachments, openPrompt, prompt, selectedMemory, settings.hasApiKey],
+    [activeProfileId, answer, attachments, meetingIsAnalyzing, openPrompt, prompt, selectedMemory, settings.hasApiKey],
   );
 
   const addAttachments = async () => {
@@ -169,7 +186,7 @@ export function Overlay() {
   };
 
   const openCapture = useCallback(async () => {
-    if (captureInFlight.current || answer.status === 'loading') return;
+    if (captureInFlight.current || answer.status === 'loading' || meetingIsAnalyzing) return;
     if (!settings.hasApiKey) {
       setAnswerOpen(true);
       setAnswer({ status: 'error', text: 'Configure sua chave OpenAI para começar.' });
@@ -189,7 +206,7 @@ export function Overlay() {
       captureInFlight.current = false;
       setIsCapturing(false);
     }
-  }, [answer.status, settings.hasApiKey, submit]);
+  }, [answer.status, meetingIsAnalyzing, settings.hasApiKey, submit]);
 
   useEffect(() => {
     return window.persona.onShortcut((action: ShortcutAction) => {
@@ -198,7 +215,7 @@ export function Overlay() {
         else openPrompt();
       }
       if (action === 'capture') void openCapture();
-      if (action === 'meeting') setMeetingOpen(true);
+      if (action === 'meeting') openMeeting();
       if (action === 'toggle-dock') setDockVisible((visible) => !visible);
       if (action === 'toggle-always-on-top') setAlwaysOnTop((value) => !value);
       if (action === 'toggle-interaction') {
@@ -214,7 +231,7 @@ export function Overlay() {
         );
       }
     });
-  }, [openCapture, openPrompt, prompt, promptOpen, submit]);
+  }, [openCapture, openMeeting, openPrompt, prompt, promptOpen, submit]);
 
   const changeOpacity = async (value: number) => {
     const saved = await window.persona.setOpacity(value);
@@ -313,8 +330,8 @@ export function Overlay() {
         </form>
       )}
 
-      {answerOpen && (
-        <section ref={answerPanelRef} className={`answer-panel glass-surface answer-${answer.status}`} style={{ ['--drag-x' as string]: `${answerDrag.offset.x}px`, ['--drag-y' as string]: `${answerDrag.offset.y}px`, ...(answerSize ? { width: `${answerSize.width}px`, height: `${answerSize.height}px`, left: `${answerSize.left}px`, top: `${answerSize.top}px`, transform: `translate(${answerDrag.offset.x - answerSize.dragOriginX}px, ${answerDrag.offset.y - answerSize.dragOriginY}px) scale(var(--overlay-scale, 1))`, transformOrigin: 'top left', paddingInline: `${Math.max(6, Math.min(26, (answerSize.width - 120) / 2))}px` } : {}) }} data-interactive aria-live="polite">
+      {(answerOpen || meetingOpen) && (
+        <section ref={answerPanelRef} className={`answer-panel glass-surface answer-${answer.status} ${meetingOpen ? 'has-meeting-tabs' : ''}`} style={{ ['--drag-x' as string]: `${answerDrag.offset.x}px`, ['--drag-y' as string]: `${answerDrag.offset.y}px`, ...(answerSize ? { width: `${answerSize.width}px`, height: `${answerSize.height}px`, left: `${answerSize.left}px`, top: `${answerSize.top}px`, transform: `translate(${answerDrag.offset.x - answerSize.dragOriginX}px, ${answerDrag.offset.y - answerSize.dragOriginY}px) scale(var(--overlay-scale, 1))`, transformOrigin: 'top left', paddingInline: `${Math.max(6, Math.min(26, (answerSize.width - 120) / 2))}px` } : {}) }} data-interactive aria-live="polite">
           <header className="answer-header">
             <span className="answer-title drag-grip" aria-label="Resposta" onMouseDown={answerDrag.startDrag} title="Arraste para mover a resposta"><MessageSquareText size={19} /><span>Resposta</span></span>
             <span className="answer-actions">
@@ -327,27 +344,49 @@ export function Overlay() {
               >
                 <Pin size={17} />
               </button>
-              <button className="icon-button" type="button" aria-label="Recolher resposta" onClick={() => setAnswerOpen(false)}>
+              {meetingActive ? <span className="answer-session-indicator"><span className="recording-dot" />Escutando</span> : <button className="icon-button" type="button" aria-label="Fechar respostas" onClick={() => { setAnswerOpen(false); setMeetingOpen(false); }}>
                 <X size={18} />
-              </button>
+              </button>}
             </span>
           </header>
 
-          <div className="answer-copy" style={{ fontSize: `${answerFontSize}px` }}>
+          {meetingOpen && <nav className="answer-tabs" role="tablist" aria-label="Conteúdo da janela de respostas">
+            <button type="button" role="tab" aria-selected={responseTab === 'transcript'} className={responseTab === 'transcript' ? 'is-active' : ''} onClick={() => setResponseTab('transcript')}><AudioLines size={14} />Transcrição{meetingActive && <span className="answer-tab-live-dot" />}</button>
+            <button type="button" role="tab" aria-selected={responseTab === 'answers'} className={responseTab === 'answers' ? 'is-active' : ''} onClick={() => setResponseTab('answers')}><MessageSquareText size={14} />Respostas{answerHistory.length > 0 && <small>{answerHistory.length + (answer.status === 'success' && answer.text.trim() ? 1 : 0)}</small>}</button>
+          </nav>}
+
+          <div className="answer-copy" style={{ fontSize: `${answerFontSize}px` }} hidden={meetingOpen && responseTab !== 'answers'}>
+            {answerHistory.map((item) => <div className="answer-history-entry" key={item.id}><AnswerContent text={item.text} /><hr className="answer-history-divider" /></div>)}
             {answer.status === 'loading' && <span className="thinking-line" aria-hidden="true" />}
             <AnswerContent text={answer.text} />
           </div>
 
+          {meetingOpen && <div className="answer-copy meeting-answer-copy" hidden={responseTab !== 'transcript'}>
+            <MeetingPanel
+              hasApiKey={settings.hasApiKey}
+              isAnswerBusy={answer.status === 'loading' || meetingIsAnalyzing}
+              onSessionActiveChange={setMeetingActive}
+              onAnalysisStateChange={setMeetingIsAnalyzing}
+              onSummary={(text) => {
+                if (answer.status === 'success' && answer.text.trim()) setAnswerHistory((current) => [...current, { id: crypto.randomUUID(), text: answer.text }]);
+                setAnswer({ status: 'success', text });
+                setAnswerOpen(true);
+                setResponseTab('answers');
+              }}
+            />
+          </div>}
+
           <footer className="answer-footer">
-            {answer.status === 'loading' && <button className="copy-action" type="button" onClick={() => window.persona.cancelAsk()}><X size={15} /> Cancelar</button>}
+            {answer.status === 'loading' && <button className="copy-action" type="button" hidden={meetingOpen && responseTab !== 'answers'} onClick={() => window.persona.cancelAsk()}><X size={15} /> Cancelar</button>}
             <button
               className="copy-action"
               type="button"
+              hidden={meetingOpen && responseTab !== 'answers'}
               onClick={() => void navigator.clipboard.writeText(answer.text)}
             >
               <Copy size={15} /> <span className="copy-label">Copiar</span>
             </button>
-            <div className="answer-typography" aria-label="Tamanho da fonte da resposta">
+            <div className="answer-typography" aria-label="Tamanho da fonte da resposta" hidden={meetingOpen && responseTab !== 'answers'}>
               <button type="button" aria-label="Diminuir fonte" title="Diminuir fonte" onClick={() => adjustAnswerFont(-1)} disabled={answerFontSize <= 12}><Minus size={15} /><span>A</span></button>
               <output aria-live="polite">{answerFontSize}px</output>
               <button type="button" aria-label="Aumentar fonte" title="Aumentar fonte" onClick={() => adjustAnswerFont(1)} disabled={answerFontSize >= 28}><Plus size={15} /><span>A</span></button>
@@ -372,18 +411,6 @@ export function Overlay() {
         </section>
       )}
 
-      {meetingOpen && (
-        <MeetingPanel
-          hasApiKey={settings.hasApiKey}
-          onClose={() => setMeetingOpen(false)}
-          onSummary={(text, keepPanelOpen) => {
-            setAnswer({ status: 'success', text });
-            setAnswerOpen(true);
-            if (!keepPanelOpen) setMeetingOpen(false);
-          }}
-        />
-      )}
-
       {contextOpen && (
         <ContextPanel profiles={profiles} activeProfileId={activeProfileId} selectedMemory={selectedMemory} onProfilesChange={setProfiles} onActiveProfileChange={setActiveProfileId} onSelectedMemoryChange={setSelectedMemory} onClose={() => setContextOpen(false)} />
       )}
@@ -397,7 +424,7 @@ export function Overlay() {
           <button className="dock-action" type="button" onClick={() => void openCapture()} disabled={isCapturing || answer.status === 'loading'}>
             <Camera size={19} /> {isCapturing ? 'Capturando…' : 'Capturar'}
           </button>
-          <button className="dock-action dock-primary" type="button" onClick={() => setMeetingOpen(true)}>
+          <button className="dock-action dock-primary" type="button" onClick={openMeeting}>
             <Mic size={18} /> Começar a ouvir <kbd>Ctrl+D</kbd>
           </button>
           <span className="dock-divider" aria-hidden="true" />
