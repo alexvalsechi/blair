@@ -7,7 +7,7 @@ import type {
   PublicSettings,
   SaveSettingsInput,
   ShortcutAction,
-  StreamEvent, HistoryEntry, Diagnostics, MeetingSummaryInput, TranscribeInput, AlibabaTranscriptionEvent, AssistantProfile, SaveAssistantProfileInput, Attachment,
+  StreamEvent, HistoryEntry, Diagnostics, MeetingSummaryInput, TranscribeInput, AlibabaTranscriptionEvent, AssistantProfile, SaveAssistantProfileInput, Attachment, MeetingAnalysisProgress,
 } from './contracts.js';
 
 contextBridge.exposeInMainWorld('persona', {
@@ -50,7 +50,7 @@ contextBridge.exposeInMainWorld('persona', {
   selectAssistantDocuments: (): Promise<Attachment[]> => ipcRenderer.invoke('assistant-documents:select'),
   diagnostics: (): Promise<Diagnostics> => ipcRenderer.invoke('privacy:diagnose'),
   transcribeAudio: (input: TranscribeInput): Promise<string> => ipcRenderer.invoke('audio:transcribe', input),
-  startAlibabaTranscription: (): Promise<void> => ipcRenderer.invoke('audio:alibaba-start'),
+  startAlibabaTranscription: (sampleRate: number): Promise<void> => ipcRenderer.invoke('audio:alibaba-start', sampleRate),
   retryAlibabaTranscription: (): Promise<void> => ipcRenderer.invoke('audio:alibaba-retry'),
   sendAlibabaAudioFrame: (audio: Uint8Array): void => ipcRenderer.send('audio:alibaba-frame', audio),
   stopAlibabaTranscription: (): Promise<void> => ipcRenderer.invoke('audio:alibaba-stop'),
@@ -60,6 +60,12 @@ contextBridge.exposeInMainWorld('persona', {
     return () => ipcRenderer.removeListener('audio:alibaba-event', listener);
   },
   summarizeMeeting: (input: MeetingSummaryInput): Promise<AskResult> => ipcRenderer.invoke('meeting:summarize', input),
+  cancelMeetingAnalysis: (): void => ipcRenderer.send('meeting:cancel'),
+  onMeetingAnalysisProgress: (callback: (progress: MeetingAnalysisProgress) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, value: MeetingAnalysisProgress) => callback(value);
+    ipcRenderer.on('meeting:progress', listener);
+    return () => ipcRenderer.removeListener('meeting:progress', listener);
+  },
   setOpacity: (value: number): Promise<PublicSettings> => ipcRenderer.invoke('overlay:set-opacity', value),
   setClickThrough: (enabled: boolean): void => ipcRenderer.send('overlay:set-click-through', enabled),
   hideOverlay: (): void => ipcRenderer.send('overlay:hide'),

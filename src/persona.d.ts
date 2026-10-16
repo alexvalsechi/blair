@@ -6,7 +6,7 @@ import type {
   PublicSettings,
   SaveSettingsInput,
   ShortcutAction,
-  StreamEvent, HistoryEntry, Diagnostics, MeetingSummaryInput, TranscribeInput, AlibabaTranscriptionEvent, AssistantProfile, SaveAssistantProfileInput, Attachment,
+  StreamEvent, HistoryEntry, Diagnostics, MeetingSummaryInput, TranscribeInput, AlibabaTranscriptionEvent, AssistantProfile, SaveAssistantProfileInput, Attachment, MeetingAnalysisProgress,
 } from '../electron/contracts';
 
 declare global {
@@ -42,12 +42,14 @@ declare global {
       selectAssistantDocuments(): Promise<Attachment[]>;
       diagnostics(): Promise<Diagnostics>;
       transcribeAudio(input: TranscribeInput): Promise<string>;
-      startAlibabaTranscription(): Promise<void>;
+      startAlibabaTranscription(sampleRate: number): Promise<void>;
       retryAlibabaTranscription(): Promise<void>;
       sendAlibabaAudioFrame(audio: Uint8Array): void;
       stopAlibabaTranscription(): Promise<void>;
       onAlibabaTranscriptionEvent(callback: (event: AlibabaTranscriptionEvent) => void): () => void;
       summarizeMeeting(input: MeetingSummaryInput): Promise<AskResult>;
+      cancelMeetingAnalysis(): void;
+      onMeetingAnalysisProgress(callback: (progress: MeetingAnalysisProgress) => void): () => void;
       setOpacity(value: number): Promise<PublicSettings>;
       setClickThrough(enabled: boolean): void;
       hideOverlay(): void;

@@ -89,6 +89,12 @@ body[data-view='overlay'] { background: transparent; }
 .prompt-context-row > button span { color: var(--teal); }
 .attachment-chip { color: #dce3e1; cursor: default; }
 .attachment-chip button { display: grid; place-items: center; width: 18px; height: 18px; padding: 0; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
+.pending-capture-preview { grid-column: 1 / -1; display: flex; align-items: center; gap: 9px; min-width: 0; padding: 0 0 0 32px; color: var(--muted); font-size: 11px; }
+.pending-capture-preview img { width: 76px; height: 48px; object-fit: cover; border: 1px solid var(--line); border-radius: 6px; background: #090b0c; }
+.pending-capture-preview button { display: grid; place-items: center; width: 24px; height: 24px; border: 1px solid var(--line); border-radius: 7px; background: rgba(255,255,255,.045); color: var(--muted); cursor: pointer; }
+.pending-capture-preview button:hover { color: var(--ink); border-color: rgba(56,199,197,.45); }
+.prompt-error { grid-column: 1 / -1; margin: 0; padding-left: 32px; color: #ffaaa5; font-size: 11px; line-height: 1.4; }
+.answer-token-usage { grid-column: 1 / -1; max-width: 100%; overflow: hidden; color: var(--muted); font-size: 9px; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
 
 .accent-icon { color: var(--teal); filter: drop-shadow(0 4px 8px rgba(56, 199, 197, 0.25)); }
 
@@ -228,8 +234,9 @@ kbd {
 .meeting-session { display: flex; min-height: 100%; flex-direction: column; }
 .meeting-session .meeting-setup { padding-top: 0; }
 .meeting-session .meeting-status { padding-top: 0; }
-.meeting-session .transcript { flex: 1; max-height: min(410px, 48vh); }
+.meeting-session .transcript { flex: 1; height: min(410px, 48vh); max-height: min(410px, 48vh); overflow-y: auto; }
 .meeting-session .meeting-controls { margin-top: 10px; }
+.meeting-analysis-progress { margin: 5px 0 0; color: var(--teal); font-size: 11px; }
 .answer-error .answer-copy { color: #ffd0c9; }
 
 .d2-diagram-card { max-width: 100%; margin: 12px 0 16px; padding: 10px; overflow: hidden; border: 1px solid rgba(255,255,255,.12); border-radius: 12px; background: rgba(255,255,255,.94); }
@@ -443,7 +450,8 @@ kbd {
 .audio-channel-mute:hover { background: rgba(255,255,255,.1); }
 .audio-channel-mute[aria-pressed='true'] { border-color: rgba(255,138,122,.4); color: #ffc0b6; background: rgba(255,138,122,.09); }
 .audio-channel-mute:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
-.transcript { min-height: 170px; max-height: 410px; overflow: auto; padding: 4px 3px 14px; user-select: text; }
+.transcript { min-height: 170px; max-height: 410px; overflow: hidden; padding: 4px 3px 14px; user-select: text; }
+.transcript-entry { padding-right: 3px; }
 .transcript p { display: grid; grid-template-columns: 48px 1fr; gap: 10px; margin: 0; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,.08); color: #edf0ec; font-size: 13px; line-height: 1.55; }
 .transcript time { color: var(--teal); font-family: 'IBM Plex Mono', monospace; font-size: 10px; }
 .transcript-analysis-marker { display: flex; align-items: center; gap: 8px; padding: 7px 0 7px 58px; color: var(--teal); font-size: 9px; }

@@ -21,7 +21,7 @@ import {
   X,
 } from 'lucide-react';
 import { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef, useState } from 'react';
-import type { AssistantProfile, Attachment, MemoryContext, ShortcutAction, StreamEvent } from '../../electron/contracts';
+import type { AssistantProfile, Attachment, MemoryContext, ShortcutAction, StreamEvent, TokenUsage } from '../../electron/contracts';
 import { errorMessage } from '../lib/errors';
 import { KeyHint } from './KeyHint';
 import { MeetingPanel } from './MeetingPanel';
@@ -47,6 +47,8 @@ export function Overlay() {
   const hasAnalysisApiKey = settings.analysisProvider === 'alibaba' ? settings.hasAlibabaApiKey : settings.hasApiKey;
   const [promptOpen, setPromptOpen] = useState(false);
   const [prompt, setPrompt] = useState('');
+  const [promptError, setPromptError] = useState('');
+  const [pendingCapture, setPendingCapture] = useState<string | null>(null);
   const [answerOpen, setAnswerOpen] = useState(false);
   const [answerFontSize, setAnswerFontSize] = useState(16);
   const [answerSize, setAnswerSize] = useState<{ width: number; height: number; left: number; top: number; dragOriginX: number; dragOriginY: number } | null>(null);
@@ -56,6 +58,7 @@ export function Overlay() {
   const [alwaysOnTop, setAlwaysOnTop] = useState(true);
   const [interactionMode, setInteractionMode] = useState(false);
   const [answer, setAnswer] = useState<AnswerState>(initialAnswer);
+  const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
   const [answerHistory, setAnswerHistory] = useState<AnswerHistoryItem[]>([]);
   const [pdfExportStatus, setPdfExportStatus] = useState('');
   const [isExportingPdf, setIsExportingPdf] = useState(false);
@@ -66,6 +69,7 @@ export function Overlay() {
   const [responseTab, setResponseTab] = useState<ResponseTab>('answers');
   const [isCapturing, setIsCapturing] = useState(false);
   const captureInFlight = useRef(false);
+  const submittedDraftRef = useRef<{ prompt: string; imageDataUrl?: string; attachments: Attachment[]; selectedMemory: MemoryContext[] } | null>(null);
   const [meetingOpen, setMeetingOpen] = useState(false);
   const [meetingActive, setMeetingActive] = useState(false);
   const [meetingIsAnalyzing, setMeetingIsAnalyzing] = useState(false);
@@ -141,7 +145,7 @@ export function Overlay() {
       window.removeEventListener('load', schedulePublish);
       window.persona.setInteractiveRegions([]);
     };
-  }, [promptOpen, answerOpen, dockVisible, meetingOpen, contextOpen, agentMenuOpen, attachments.length, selectedMemory.length, promptDrag.offset.x, promptDrag.offset.y, answerDrag.offset.x, answerDrag.offset.y, dockDrag.offset.x, dockDrag.offset.y]);
+  }, [promptOpen, answerOpen, dockVisible, meetingOpen, contextOpen, agentMenuOpen, attachments.length, selectedMemory.length, Boolean(pendingCapture), Boolean(promptError), promptDrag.offset.x, promptDrag.offset.y, answerDrag.offset.x, answerDrag.offset.y, dockDrag.offset.x, dockDrag.offset.y]);
 
   useEffect(() => {
     void window.persona.getSettings().then((value) => {
@@ -191,22 +195,47 @@ export function Overlay() {
       if (event.type === 'done') {
         if (streamFlushTimerRef.current !== null) window.clearTimeout(streamFlushTimerRef.current);
         streamFlushTimerRef.current = null;
+        submittedDraftRef.current = null;
+        setTokenUsage(event.usage ?? null);
         setAnswer({ status: 'success', text: streamTextRef.current, requestId: event.requestId });
       }
       if (event.type === 'incomplete') {
         if (streamFlushTimerRef.current !== null) window.clearTimeout(streamFlushTimerRef.current);
         streamFlushTimerRef.current = null;
+        submittedDraftRef.current = null;
+        setTokenUsage(event.usage ?? null);
         const notice = `\n\n---\n\n> **Resposta incompleta:** ${event.message}`;
         setAnswer({ status: 'success', text: `${streamTextRef.current}${notice}` });
       }
       if (event.type === 'cancelled') {
         if (streamFlushTimerRef.current !== null) window.clearTimeout(streamFlushTimerRef.current);
         streamFlushTimerRef.current = null;
+        const draft = submittedDraftRef.current;
+        submittedDraftRef.current = null;
+        if (draft) {
+          setPrompt(draft.prompt);
+          setPendingCapture(draft.imageDataUrl ?? null);
+          setAttachments(draft.attachments);
+          setSelectedMemory(draft.selectedMemory);
+          setPromptOpen(true);
+          requestAnimationFrame(() => inputRef.current?.focus());
+        }
         setAnswer({ status: 'success', text: streamTextRef.current || 'Solicitação cancelada.' });
       }
       if (event.type === 'error') {
         if (streamFlushTimerRef.current !== null) window.clearTimeout(streamFlushTimerRef.current);
         streamFlushTimerRef.current = null;
+        const draft = submittedDraftRef.current;
+        submittedDraftRef.current = null;
+        if (draft) {
+          setPrompt(draft.prompt);
+          setPendingCapture(draft.imageDataUrl ?? null);
+          setAttachments(draft.attachments);
+          setSelectedMemory(draft.selectedMemory);
+          setPromptError(event.message);
+          setPromptOpen(true);
+          requestAnimationFrame(() => inputRef.current?.focus());
+        }
         const partial = streamTextRef.current;
         setAnswer({ status: 'error', text: partial ? `${partial}\n\n**Falha ao concluir:** ${event.message}` : event.message });
       }
@@ -225,6 +254,7 @@ export function Overlay() {
   const openPrompt = useCallback(async () => {
     await window.persona.focusOverlay();
     setAlwaysOnTop(true);
+    setPromptError('');
     setPromptOpen(true);
     requestAnimationFrame(() => inputRef.current?.focus());
   }, []);
@@ -236,17 +266,17 @@ export function Overlay() {
   }, []);
 
   const submit = useCallback(
-    async (imageDataUrl?: string) => {
-      if (answer.status === 'loading' || meetingIsAnalyzing || (captureInFlight.current && !imageDataUrl)) return;
+    async () => {
+      if (answer.status === 'loading' || meetingIsAnalyzing || captureInFlight.current) return;
       await window.persona.focusOverlay();
       setAlwaysOnTop(true);
       if (!hasAnalysisApiKey) {
-        setAnswerOpen(true);
-        setAnswer({ status: 'error', text: 'Configure sua chave OpenAI para começar.' });
+        setPromptError(settings.analysisProvider === 'alibaba' ? 'Configure a chave da Alibaba Cloud para enviar.' : 'Configure a chave OpenAI para enviar.');
+        setPromptOpen(true);
         await window.persona.openSettings();
         return;
       }
-      if (!prompt.trim() && !imageDataUrl && !attachments.length) {
+      if (!prompt.trim() && !pendingCapture && !attachments.length) {
         openPrompt();
         return;
       }
@@ -254,6 +284,10 @@ export function Overlay() {
       if (answer.status === 'success' && answer.text.trim()) {
         setAnswerHistory((current) => [...current, { id: crypto.randomUUID(), text: answer.text }]);
       }
+      const imageDataUrl = pendingCapture ?? undefined;
+      submittedDraftRef.current = { prompt, imageDataUrl, attachments, selectedMemory };
+      setPromptError('');
+      setTokenUsage(null);
       setAnswerOpen(true);
       setResponseTab('answers');
       streamTextRef.current = '';
@@ -265,14 +299,25 @@ export function Overlay() {
         window.persona.askStream({ prompt: prompt.trim(), imageDataUrl, profileId: activeProfileId, attachments, contextEntries: selectedMemory });
         setAnswer({ status: 'loading', text: '' });
         setPrompt('');
+        setPendingCapture(null);
         setAttachments([]);
         setSelectedMemory([]);
         setPromptOpen(false);
       } catch (error) {
+        const draft = submittedDraftRef.current;
+        submittedDraftRef.current = null;
+        if (draft) {
+          setPrompt(draft.prompt);
+          setPendingCapture(draft.imageDataUrl ?? null);
+          setAttachments(draft.attachments);
+          setSelectedMemory(draft.selectedMemory);
+          setPromptError(errorMessage(error));
+          setPromptOpen(true);
+        }
         setAnswer({ status: 'error', text: errorMessage(error) });
       }
     },
-    [activeProfileId, answer, attachments, hasAnalysisApiKey, meetingIsAnalyzing, openPrompt, prompt, selectedMemory],
+    [activeProfileId, answer, attachments, hasAnalysisApiKey, meetingIsAnalyzing, openPrompt, pendingCapture, prompt, selectedMemory, settings.analysisProvider],
   );
 
   const addAttachments = async () => {
@@ -287,31 +332,27 @@ export function Overlay() {
 
   const openCapture = useCallback(async () => {
     if (captureInFlight.current || answer.status === 'loading' || meetingIsAnalyzing) return;
-    if (!hasAnalysisApiKey) {
-      setAnswerOpen(true);
-      setAnswer({ status: 'error', text: 'Configure sua chave OpenAI para começar.' });
-      await window.persona.openSettings();
-      return;
-    }
     captureInFlight.current = true;
     setIsCapturing(true);
     try {
       const source = await window.persona.captureOverlayScreen();
       if (!source) throw new Error('Não foi possível capturar a tela onde a barra do Persona está posicionada.');
-      await submit(source.dataUrl);
+      setPendingCapture(source.dataUrl);
+      setPromptError('');
+      await openPrompt();
     } catch (error) {
-      setAnswerOpen(true);
-      setAnswer({ status: 'error', text: errorMessage(error) });
+      await openPrompt();
+      setPromptError(errorMessage(error));
     } finally {
       captureInFlight.current = false;
       setIsCapturing(false);
     }
-  }, [answer.status, hasAnalysisApiKey, meetingIsAnalyzing, submit]);
+  }, [answer.status, meetingIsAnalyzing, openPrompt]);
 
   useEffect(() => {
     return window.persona.onShortcut((action: ShortcutAction) => {
       if (action === 'ask') {
-        if (promptOpen && prompt.trim()) void submit();
+        if (promptOpen && (prompt.trim() || pendingCapture || attachments.length)) void submit();
         else openPrompt();
       }
       if (action === 'capture') void openCapture();
@@ -337,7 +378,7 @@ export function Overlay() {
         );
       }
     });
-  }, [meetingOpen, openCapture, openMeeting, openPrompt, prompt, promptOpen, submit]);
+  }, [attachments.length, meetingOpen, openCapture, openMeeting, openPrompt, pendingCapture, prompt, promptOpen, submit]);
 
   const changeOpacity = async (value: number) => {
     const saved = await window.persona.setOpacity(value);
@@ -427,17 +468,19 @@ export function Overlay() {
             aria-label="Pergunta para a IA"
           />
           <KeyHint keys={['Ctrl', 'Enter']} />
-          <button className="send-button" type="submit" disabled={(!prompt.trim() && !attachments.length) || answer.status === 'loading'} aria-label="Enviar pergunta">
+          <button className="send-button" type="submit" disabled={(!prompt.trim() && !attachments.length && !pendingCapture) || answer.status === 'loading'} aria-label="Enviar pergunta">
             <ArrowUp size={20} />
           </button>
-          <button className="icon-button prompt-close-button" type="button" title="Fechar pergunta" aria-label="Fechar janela de input" onClick={() => setPromptOpen(false)}>
+          <button className="icon-button prompt-close-button" type="button" title="Fechar pergunta e descartar a captura pendente" aria-label="Fechar janela de input" onClick={() => { setPendingCapture(null); setPromptError(''); setPromptOpen(false); }}>
             <X size={18} />
           </button>
+          {pendingCapture && <div className="pending-capture-preview"><img src={pendingCapture} alt="Prévia da captura anexada" /><span>Captura anexada</span><button type="button" aria-label="Remover captura anexada" title="Remover captura" onClick={() => setPendingCapture(null)}><X size={14} /></button></div>}
           <div className="prompt-context-row">
             <button type="button" onClick={() => setContextOpen(true)}><Layers3 size={14} /> {profiles.find((item) => item.id === activeProfileId)?.name ?? 'Copiloto geral'}{selectedMemory.length > 0 && <span>{selectedMemory.length} memória{selectedMemory.length > 1 ? 's' : ''}</span>}</button>
             <button type="button" onClick={() => void addAttachments()}><Paperclip size={14} /> Anexar</button>
             {attachments.map((attachment) => <span className="attachment-chip" key={attachment.id}>{attachment.name}<button type="button" aria-label={`Remover ${attachment.name}`} onClick={() => setAttachments((items) => items.filter((item) => item.id !== attachment.id))}><X size={12} /></button></span>)}
           </div>
+          {promptError && <p className="prompt-error" role="alert">{promptError}</p>}
         </form>
       )}
 
@@ -480,13 +523,15 @@ export function Overlay() {
               alibabaWorkspaceHost={settings.alibabaWorkspaceHost}
               transcriptionProvider={settings.transcriptionProvider}
               isAnswerBusy={answer.status === 'loading' || meetingIsAnalyzing}
+              isVisible={responseTab === 'transcript'}
               activeProfileId={activeProfileId}
               analysisRequestId={transcriptAnalysisRequestId}
               onSessionActiveChange={setMeetingActive}
               onAnalysisStateChange={setMeetingIsAnalyzing}
-              onSummary={(text) => {
+              onSummary={(text, usage) => {
                 if (answer.status === 'success' && answer.text.trim()) setAnswerHistory((current) => [...current, { id: crypto.randomUUID(), text: answer.text }]);
                 setAnswer({ status: 'success', text });
+                setTokenUsage(usage ?? null);
                 setAnswerOpen(true);
                 setResponseTab('answers');
               }}
@@ -495,6 +540,9 @@ export function Overlay() {
 
           <footer className="answer-footer">
             {answer.status === 'loading' && <button className="copy-action" type="button" hidden={meetingOpen && responseTab !== 'answers'} onClick={() => window.persona.cancelAsk()}><X size={15} /> Cancelar</button>}
+            {tokenUsage && <span className="answer-token-usage" hidden={meetingOpen && responseTab !== 'answers'} title="Uso informado pelo provedor; embeddings aparecem separadamente quando documentos são recuperados.">
+              {tokenUsage.inputTokens.toLocaleString('pt-BR')} entrada{tokenUsage.cachedInputTokens ? ` (${tokenUsage.cachedInputTokens.toLocaleString('pt-BR')} cache)` : ''} · {tokenUsage.outputTokens.toLocaleString('pt-BR')} saída{tokenUsage.embeddingInputTokens ? ` · ${tokenUsage.embeddingInputTokens.toLocaleString('pt-BR')} embeddings` : ''} tokens
+            </span>}
             <button
               className="copy-action"
               type="button"

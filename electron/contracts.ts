@@ -92,20 +92,35 @@ export type OverlayAudioSource = Pick<CaptureSource, 'id' | 'name'>;
 export type AskInput = {
   prompt: string;
   imageDataUrl?: string;
+  referenceContext?: string;
   profileId?: string;
   attachments?: Attachment[];
   contextEntries?: MemoryContext[];
 };
 
+export type TokenUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens: number;
+  embeddingInputTokens?: number;
+};
+
+export type MeetingAnalysisProgress = {
+  stage: string;
+  completed: number;
+  total: number;
+};
+
 export type AskResult = {
   text: string;
   requestId?: string;
+  usage?: TokenUsage;
 };
 
 export type StreamEvent =
   | { type: 'delta'; text: string }
-  | { type: 'done'; requestId?: string }
-  | { type: 'incomplete'; message: string }
+  | { type: 'done'; requestId?: string; usage?: TokenUsage }
+  | { type: 'incomplete'; message: string; usage?: TokenUsage }
   | { type: 'error'; message: string }
   | { type: 'cancelled' };
 

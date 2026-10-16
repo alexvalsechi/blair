@@ -1,6 +1,6 @@
 import { AudioLines, CircleStop, Mic, MicOff, RefreshCw, Sparkles, Volume2, VolumeX, Wifi, WifiOff } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AlibabaTranscriptionEvent, AudioSource, TranscriptSegment } from '../../electron/contracts';
+import type { AlibabaTranscriptionEvent, AskResult, AudioSource, MeetingAnalysisProgress, TranscriptSegment } from '../../electron/contracts';
 import { errorMessage } from '../lib/errors';
 import { alibabaTranscriptionCost } from '../lib/model-pricing';
 import { getUnanalyzedSegments } from '../lib/transcript-cursor';
@@ -12,9 +12,10 @@ type Props = {
   alibabaWorkspaceHost: string;
   transcriptionProvider: 'openai' | 'alibaba';
   isAnswerBusy: boolean;
+  isVisible: boolean;
   activeProfileId: string;
   analysisRequestId: number;
-  onSummary(text: string): void;
+  onSummary(text: string, usage?: AskResult['usage']): void;
   onSessionActiveChange(active: boolean): void;
   onAnalysisStateChange(analyzing: boolean): void;
 };
@@ -24,6 +25,7 @@ type MeetingState = 'setup' | 'starting' | 'recording' | 'ending' | 'finished';
 const SEGMENT_MS = 12_000;
 type AudioChannel = 'microphone' | 'computer';
 type ChannelValues<T> = Record<AudioChannel, T>;
+type AnalyserRefs = { current: Partial<Record<AudioChannel, AnalyserNode>> };
 
 function measureAudioLevel(analyser: AnalyserNode): number {
   const samples = new Uint8Array(analyser.fftSize);
@@ -61,13 +63,34 @@ function AudioChannelMeter({ channel, level, muted, onToggleMute }: {
   );
 }
 
-export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceHost, alibabaWorkspaceHost, transcriptionProvider, isAnswerBusy, activeProfileId, analysisRequestId, onSummary, onSessionActiveChange, onAnalysisStateChange }: Props) {
+function AudioMeters({ analysers, muted, onToggleMute }: {
+  analysers: AnalyserRefs;
+  muted: ChannelValues<boolean>;
+  onToggleMute(channel: AudioChannel): void;
+}) {
+  const [levels, setLevels] = useState<ChannelValues<number>>({ microphone: 0, computer: 0 });
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setLevels({
+      microphone: analysers.current.microphone ? measureAudioLevel(analysers.current.microphone) : 0,
+      computer: analysers.current.computer ? measureAudioLevel(analysers.current.computer) : 0,
+    }), 100);
+    return () => window.clearInterval(timer);
+  }, [analysers]);
+
+  return <>
+    <AudioChannelMeter channel="microphone" level={levels.microphone} muted={muted.microphone} onToggleMute={() => onToggleMute('microphone')} />
+    <AudioChannelMeter channel="computer" level={levels.computer} muted={muted.computer} onToggleMute={() => onToggleMute('computer')} />
+  </>;
+}
+
+export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceHost, alibabaWorkspaceHost, transcriptionProvider, isAnswerBusy, isVisible, activeProfileId, analysisRequestId, onSummary, onSessionActiveChange, onAnalysisStateChange }: Props) {
   const [state, setState] = useState<MeetingState>('setup');
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const [pending, setPending] = useState(0);
   const [error, setError] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [audioLevels, setAudioLevels] = useState<ChannelValues<number>>({ microphone: 0, computer: 0 });
+  const [analysisProgress, setAnalysisProgress] = useState<MeetingAnalysisProgress | null>(null);
   const [mutedChannels, setMutedChannels] = useState<ChannelValues<boolean>>({ microphone: false, computer: false });
   const [alibabaUsage, setAlibabaUsage] = useState({ inputTokens: 0, outputTokens: 0 });
   const [alibabaConnection, setAlibabaConnection] = useState<{ status: 'connected' | 'reconnecting' | 'disconnected'; attempt: number }>({ status: 'disconnected', attempt: 0 });
@@ -83,7 +106,6 @@ export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceH
   const audioContextRef = useRef<AudioContext | null>(null);
   const channelGainsRef = useRef<Partial<Record<AudioChannel, GainNode>>>({});
   const channelAnalysersRef = useRef<Partial<Record<AudioChannel, AnalyserNode>>>({});
-  const meterFrameRef = useRef<number | null>(null);
   const mutedChannelsRef = useRef<ChannelValues<boolean>>({ microphone: false, computer: false });
   const transcriptionChainRef = useRef<Promise<void>>(Promise.resolve());
   const transcriptRef = useRef<TranscriptSegment[]>([]);
@@ -125,6 +147,8 @@ export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceH
     transcriptRef.current = next;
     setSegments(next);
   }), []);
+
+  useEffect(() => window.persona.onMeetingAnalysisProgress(setAnalysisProgress), []);
 
   const transcribe = useCallback(async (blob: Blob, generation: number) => {
     if (blob.size < 1_000) return;
@@ -191,28 +215,8 @@ export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceH
     mixedStreamRef.current = null;
     channelGainsRef.current = {};
     channelAnalysersRef.current = {};
-    if (meterFrameRef.current !== null) cancelAnimationFrame(meterFrameRef.current);
-    meterFrameRef.current = null;
-    setAudioLevels({ microphone: 0, computer: 0 });
     if (audioContextRef.current) void audioContextRef.current.close();
     audioContextRef.current = null;
-  }, []);
-
-  const startMetering = useCallback(() => {
-    if (meterFrameRef.current !== null) cancelAnimationFrame(meterFrameRef.current);
-    let lastMeterUpdate = 0;
-    const updateMeters = (timestamp: number) => {
-      if (!runningRef.current) { meterFrameRef.current = null; return; }
-      if (timestamp - lastMeterUpdate >= 90) {
-        lastMeterUpdate = timestamp;
-        setAudioLevels({
-          microphone: channelAnalysersRef.current.microphone ? measureAudioLevel(channelAnalysersRef.current.microphone) : 0,
-          computer: channelAnalysersRef.current.computer ? measureAudioLevel(channelAnalysersRef.current.computer) : 0,
-        });
-      }
-      meterFrameRef.current = requestAnimationFrame(updateMeters);
-    };
-    meterFrameRef.current = requestAnimationFrame(updateMeters);
   }, []);
 
   useEffect(() => releaseMedia, [releaseMedia]);
@@ -265,7 +269,9 @@ export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceH
         const analyser = context.createAnalyser();
         analyser.fftSize = 512;
         const gain = context.createGain();
-        gain.gain.value = mutedChannelsRef.current[channel] ? 0 : 1;
+        // Boost quiet desktop audio before it reaches the ASR; this stream is
+        // isolated from speaker playback, and the PCM conversion clamps peaks.
+        gain.gain.value = mutedChannelsRef.current[channel] ? 0 : 2;
         source.connect(analyser);
         analyser.connect(gain);
         gain.connect(destination);
@@ -278,7 +284,7 @@ export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceH
         setAlibabaUsage({ inputTokens: 0, outputTokens: 0 });
         setAlibabaConnection({ status: 'reconnecting', attempt: 0 });
         setConnectionMessage('Conectando ao Qwen…');
-        await window.persona.startAlibabaTranscription();
+        await window.persona.startAlibabaTranscription(context.sampleRate);
         alibabaSessionActiveRef.current = true;
         const mixedSource = context.createMediaStreamSource(destination.stream);
         const processor = context.createScriptProcessor(2_048, 1, 1);
@@ -303,7 +309,6 @@ export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceH
       }
       runningRef.current = true;
       setState('recording');
-      startMetering();
       if (transcriptionProvider === 'openai') startSegment();
     } catch (reason) {
       releaseMedia();
@@ -313,7 +318,7 @@ export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceH
     } finally {
       startInFlightRef.current = false;
     }
-  }, [canTranscribe, onSessionActiveChange, releaseMedia, startMetering, startSegment, state, transcriptionProvider]);
+  }, [canTranscribe, onSessionActiveChange, releaseMedia, startSegment, state, transcriptionProvider]);
 
   const reconnectAlibaba = useCallback(async () => {
     if (manualReconnectBusy || state !== 'recording') return;
@@ -352,7 +357,7 @@ export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceH
     setMutedChannels(next);
     const gain = channelGainsRef.current[channel];
     const context = audioContextRef.current;
-    if (gain && context) gain.gain.setTargetAtTime(nextMuted ? 0 : 1, context.currentTime, 0.025);
+    if (gain && context) gain.gain.setTargetAtTime(nextMuted ? 0 : 2, context.currentTime, 0.025);
   };
 
   const endSession = async () => {
@@ -386,15 +391,19 @@ export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceH
       return;
     }
     setIsAnalyzing(true);
+    setAnalysisProgress({ stage: 'Preparando análise', completed: 0, total: 1 });
     onAnalysisStateChange(true);
     setError('');
     try {
       const result = await window.persona.summarizeMeeting({ transcript, profileId: activeProfileId });
       for (const segment of newSegments) analyzedSegmentsRef.current.set(segment.id, segment.text);
       setLastAnalyzedSegmentId(newSegments.at(-1)?.id ?? null);
-      onSummary(result.text);
+      onSummary(result.text, result.usage);
+      setAnalysisProgress(null);
     } catch (reason) {
-      setError(errorMessage(reason));
+      if (reason instanceof Error && (reason.name === 'AbortError' || reason.name === 'APIUserAbortError')) setError('Análise cancelada. Você pode tentar novamente.');
+      else setError(errorMessage(reason));
+      setAnalysisProgress(null);
     } finally {
       setIsAnalyzing(false);
       onAnalysisStateChange(false);
@@ -441,16 +450,16 @@ export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceH
             {alibabaConnection.status === 'disconnected' && state === 'recording' && <button type="button" onClick={() => void reconnectAlibaba()} disabled={manualReconnectBusy}>{manualReconnectBusy ? <RefreshCw size={13} className="is-spinning" /> : <RefreshCw size={13} />}Reconectar</button>}
           </div>}
           {state === 'recording' && <section className="meeting-meters" aria-label="Medidores e controles de áudio">
-            <AudioChannelMeter channel="microphone" level={audioLevels.microphone} muted={mutedChannels.microphone} onToggleMute={() => toggleChannelMuted('microphone')} />
-            <AudioChannelMeter channel="computer" level={audioLevels.computer} muted={mutedChannels.computer} onToggleMute={() => toggleChannelMuted('computer')} />
+            <AudioMeters analysers={channelAnalysersRef} muted={mutedChannels} onToggleMute={toggleChannelMuted} />
           </section>}
-          <div className="transcript" aria-live="polite">
-            {segments.map((segment) => <div className="transcript-entry" key={segment.id}><p><time>{new Date(segment.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</time>{segment.text}</p>{segment.id === lastAnalyzedSegmentId && <div className="transcript-analysis-marker" role="note">Última análise até aqui</div>}</div>)}
-            {!segments.length && <p className="transcript-empty">{transcriptionProvider === 'alibaba' ? 'A transcrição ao vivo do Qwen aparecerá aqui enquanto você fala. Você pode abrir a aba Respostas sem encerrar a sessão.' : 'A transcrição aparecerá aqui em blocos de cerca de 12 segundos. Você pode abrir a aba Respostas sem encerrar a sessão.'}</p>}
+          <div className="transcript" aria-label="Transcrição da reunião">
+            {isVisible && (segments.length ? segments.map((segment) => <div className="transcript-entry" key={segment.id}><p><time>{new Date(segment.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</time>{segment.text}</p>{segment.id === lastAnalyzedSegmentId && <div className="transcript-analysis-marker" role="note">Última análise até aqui</div>}</div>) : <p className="transcript-empty">{transcriptionProvider === 'alibaba' ? 'A transcrição ao vivo do Qwen aparecerá aqui enquanto você fala. Você pode abrir a aba Respostas sem encerrar a sessão.' : 'A transcrição aparecerá aqui em blocos de cerca de 12 segundos. Você pode abrir a aba Respostas sem encerrar a sessão.'}</p>)}
           </div>
+          {isAnalyzing && analysisProgress && <p className="meeting-analysis-progress" role="status">{analysisProgress.stage}{analysisProgress.total > 1 ? ` · ${Math.min(analysisProgress.completed + 1, analysisProgress.total)} de ${analysisProgress.total}` : ''}</p>}
           {error && <p className="meeting-error" role="alert">{error}</p>}
           <footer className="meeting-controls">
-            {(state === 'recording' || state === 'finished') && <button className="meeting-primary" type="button" disabled={!hasApiKey || !segments.length || pending > 0 || isAnalyzing || isAnswerBusy} title={!hasApiKey ? 'Configure também a chave OpenAI para gerar análises.' : undefined} onClick={() => void analyzeTranscript()}><Sparkles size={15} />{isAnalyzing ? 'Analisando transcrição…' : 'Gerar análise'}</button>}
+            {(state === 'recording' || state === 'finished') && <button className="meeting-primary" type="button" disabled={!hasApiKey || !segments.length || pending > 0 || isAnalyzing || isAnswerBusy} title={!hasApiKey ? 'Configure também a chave do provedor de análise para gerar análises.' : undefined} onClick={() => void analyzeTranscript()}><Sparkles size={15} />{isAnalyzing ? 'Analisando transcrição…' : 'Gerar análise'}</button>}
+            {isAnalyzing && <button className="discard-button" type="button" onClick={() => window.persona.cancelMeetingAnalysis()}><CircleStop size={15} /> Cancelar análise</button>}
             {state === 'recording' && <button className="discard-button" type="button" onClick={() => void endSession()}><CircleStop size={16} /> Encerrar sessão</button>}
             {state === 'ending' && <button className="discard-button" type="button" disabled><CircleStop size={16} /> Finalizando…</button>}
             {state === 'finished' && <button type="button" onClick={restartSession}><AudioLines size={15} /> Começar outra sessão</button>}

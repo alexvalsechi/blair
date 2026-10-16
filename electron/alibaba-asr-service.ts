@@ -5,6 +5,7 @@ import type { AlibabaTranscriptionEvent } from './contracts.js';
 type Session = {
   apiKey: string;
   workspaceHost: string;
+  sampleRate: number;
   socket: WebSocket | null;
   taskId: string;
   ready: boolean;
@@ -114,7 +115,13 @@ function connectSocket(current: Session, initial: boolean): Promise<void> {
           task: 'asr',
           function: 'recognition',
           model: 'qwen-audio-3.1-asr-flash-streaming',
-          parameters: { format: 'pcm', sample_rate: 16_000 },
+            parameters: {
+              format: 'pcm',
+              sample_rate: current.sampleRate,
+              language_hints: ['pt'],
+              ...(current.sampleRate === 16_000 ? { vad_model: 'near_meeting_16k' } : {}),
+              speech_noise_threshold: -0.2,
+            },
           input: {},
         },
       }));
@@ -126,7 +133,16 @@ function connectSocket(current: Session, initial: boolean): Promise<void> {
         const packet = JSON.parse(messageText(data)) as {
           header?: { event?: string; error_message?: string };
           payload?: {
-            output?: { sentence?: { sentence_id?: number; sentence_end?: boolean; text?: string; heartbeat?: boolean }; usage?: unknown };
+            output?: {
+              sentence?: {
+                sentence_id?: number;
+                sentence_end?: boolean;
+                text?: string;
+                heartbeat?: boolean;
+                words?: Array<{ text?: string; punctuation?: string }>;
+              };
+              usage?: unknown;
+            };
             usage?: unknown;
           };
         };
@@ -144,7 +160,8 @@ function connectSocket(current: Session, initial: boolean): Promise<void> {
           applyUsage(current, usage);
           const sentence = packet.payload?.output?.sentence;
           if (sentence && !sentence.heartbeat) {
-            current.onEvent({ type: 'result', sentenceId: sentence.sentence_id ?? 0, sentenceEnd: Boolean(sentence.sentence_end), text: sentence.text ?? '' });
+            const text = sentence.text || sentence.words?.map((word) => `${word.text ?? ''}${word.punctuation ?? ''}`).join('') || '';
+            current.onEvent({ type: 'result', sentenceId: sentence.sentence_id ?? 0, sentenceEnd: Boolean(sentence.sentence_end), text });
           }
         } else if (event === 'task-finished') {
           applyUsage(current, usage);
@@ -191,12 +208,17 @@ function connectSocket(current: Session, initial: boolean): Promise<void> {
 export async function startAlibabaTranscription(
   apiKey: string,
   workspaceHost: string,
+  sampleRate: number,
   onEvent: (event: AlibabaTranscriptionEvent) => void,
 ): Promise<void> {
   await stopAlibabaTranscription();
+  const validSampleRate = Number.isInteger(sampleRate) && sampleRate >= 8_000 && sampleRate <= 192_000
+    ? sampleRate
+    : 16_000;
   const current: Session = {
     apiKey,
     workspaceHost,
+    sampleRate: validSampleRate,
     socket: null,
     taskId: '',
     ready: false,
