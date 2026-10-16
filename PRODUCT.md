@@ -29,7 +29,7 @@ O MVP é bem-sucedido quando o usuário configura a própria chave OpenAI uma ve
 
 ## Positioning
 
-Um assistente Windows local-first, sem conta própria, assinatura ou paywall. A aplicação nova não desbloqueia nem modifica o Perssua: implementa recursos próprios, por desenho, em uma reconstrução clean-room.
+Um assistente Windows local-first, sem conta própria, assinatura ou paywall, desenvolvido em torno de fluxos próprios para apoiar reuniões e chamadas.
 
 ## Operating Context
 
@@ -59,21 +59,7 @@ Um assistente Windows local-first, sem conta própria, assinatura ou paywall. A 
 - Invisibilidade significa discrição e exclusão de capturas de tela quando o Windows e o aplicativo de reunião respeitarem a API; não é garantia universal.
 - O produto não tenta burlar monitoramento, políticas corporativas, proctoring ou mecanismos de segurança.
 - Captura e envio exigem ação consciente do usuário; não haverá gravação silenciosa no MVP.
-- Não copiar código, marca, textos, prompts, ícones ou ativos proprietários do Perssua.
 - OpenAI é o único provedor do MVP, com fronteira interna preparada para provedores futuros.
-
-## Evidence on Hand
-
-A instalação autorizada do Perssua 0.27.1 foi observada com REA como referência comportamental. A execução mostrou:
-
-- uma janela Electron transparente para o overlay e outra para a tela principal;
-- barra compacta inferior e entrada de pergunta separada no topo;
-- `Ctrl+Enter` para pergunta/envio, `Ctrl+E` para captura e `Ctrl+D` para áudio;
-- atalhos para visibilidade, barra, sempre no topo, movimento e opacidade;
-- controle de privacidade baseado em proteção de conteúdo do Windows;
-- configuração de provedores separada da experiência de reunião.
-
-Essas evidências descrevem comportamento observável, não autorizam reutilização de implementação proprietária.
 
 ## Product Principles
 
