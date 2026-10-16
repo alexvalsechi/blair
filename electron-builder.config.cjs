@@ -37,6 +37,7 @@ module.exports = {
   ...packageJson.build,
   productName: appName,
   executableName: appName,
+  artifactName: "${productName}.${version}.${ext}",
   win: {
     ...packageJson.build.win,
     icon: windowsIcon,

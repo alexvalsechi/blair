@@ -75,6 +75,13 @@ jobs:
               --latest=false
           }
 
+          $legacyAssets = gh release view $env:RELEASE_TAG --json assets --jq '.assets[].name' |
+            Where-Object { $_ -like "Persona*.exe" }
+
+          foreach ($asset in $legacyAssets) {
+            gh release delete-asset $env:RELEASE_TAG $asset --yes
+          }
+
           Get-ChildItem -LiteralPath release -Filter *.exe | ForEach-Object {
             gh release upload $env:RELEASE_TAG $_.FullName --clobber
           }
