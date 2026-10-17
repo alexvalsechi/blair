@@ -7,6 +7,7 @@ import { clampOpacity, normalizeAlibabaReasoningEfforts, normalizeModel, normali
 type StoredSettings = {
   encryptedApiKey?: string;
   encryptedAlibabaApiKey?: string;
+  encryptedTypeSafeApiKey?: string;
   encryptedAlibabaTranscriptionApiKey?: string;
   model: string;
   analysisProvider: 'openai' | 'alibaba';
@@ -86,6 +87,7 @@ export async function getPublicSettings(): Promise<PublicSettings> {
   return {
     hasApiKey: Boolean(stored.encryptedApiKey),
     hasAlibabaApiKey: Boolean(stored.encryptedAlibabaApiKey),
+    hasTypeSafeApiKey: Boolean(stored.encryptedTypeSafeApiKey),
     analysisProvider: stored.analysisProvider,
     model: stored.model,
     transcriptionModel: stored.transcriptionModel,
@@ -149,6 +151,13 @@ export async function saveSettings(input: SaveSettingsInput): Promise<PublicSett
     next.encryptedAlibabaTranscriptionApiKey = undefined;
   }
 
+  if (input.typeSafeApiKey?.trim()) {
+    if (!safeStorage.isEncryptionAvailable()) {
+      throw new Error('A proteção de credenciais do Windows não está disponível. A chave TypeSafe não foi salva.');
+    }
+    next.encryptedTypeSafeApiKey = safeStorage.encryptString(input.typeSafeApiKey.trim()).toString('base64');
+  }
+
   await writeStored(next);
   return getPublicSettings();
 }
@@ -203,5 +212,12 @@ export async function readAlibabaApiKey(): Promise<string> {
     throw new Error('O Windows nÃ£o disponibilizou a proteÃ§Ã£o necessÃ¡ria para ler a chave Alibaba.');
   }
   return safeStorage.decryptString(Buffer.from(stored.encryptedAlibabaApiKey, 'base64'));
+}
+
+export async function readTypeSafeApiKey(): Promise<string> {
+  const stored = await readStored();
+  if (!stored.encryptedTypeSafeApiKey) throw new Error('Configure a chave TypeSafe para ativar os insights rápidos.');
+  if (!safeStorage.isEncryptionAvailable()) throw new Error('O Windows não disponibilizou a proteção necessária para ler a chave TypeSafe.');
+  return safeStorage.decryptString(Buffer.from(stored.encryptedTypeSafeApiKey, 'base64'));
 }
 

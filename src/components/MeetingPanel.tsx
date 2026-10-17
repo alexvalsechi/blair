@@ -1,9 +1,10 @@
 import { AudioLines, CircleStop, Mic, MicOff, RefreshCw, Sparkles, Volume2, VolumeX, Wifi, WifiOff } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AlibabaTranscriptionEvent, AskResult, AudioSource, MeetingAnalysisProgress, TranscriptSegment } from '../../electron/contracts';
+import type { AlibabaTranscriptionEvent, AskResult, AudioSource, InsightTranscriptUpdate, MeetingAnalysisProgress, TranscriptSegment } from '../../electron/contracts';
 import { errorMessage } from '../lib/errors';
 import { alibabaTranscriptionCost } from '../lib/model-pricing';
 import { getUnanalyzedSegments } from '../lib/transcript-cursor';
+import { qwenInsightUpdate } from '../lib/insight-transcript';
 
 type Props = {
   hasApiKey: boolean;
@@ -18,6 +19,7 @@ type Props = {
   onSummary(text: string, usage?: AskResult['usage']): void;
   onSessionActiveChange(active: boolean): void;
   onAnalysisStateChange(analyzing: boolean): void;
+  onTranscriptUpdate(update: InsightTranscriptUpdate): void;
 };
 
 type MeetingState = 'setup' | 'starting' | 'recording' | 'ending' | 'finished';
@@ -84,7 +86,7 @@ function AudioMeters({ analysers, muted, onToggleMute }: {
   </>;
 }
 
-export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceHost, alibabaWorkspaceHost, transcriptionProvider, isAnswerBusy, isVisible, activeProfileId, analysisRequestId, onSummary, onSessionActiveChange, onAnalysisStateChange }: Props) {
+export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceHost, alibabaWorkspaceHost, transcriptionProvider, isAnswerBusy, isVisible, activeProfileId, analysisRequestId, onSummary, onSessionActiveChange, onAnalysisStateChange, onTranscriptUpdate }: Props) {
   const [state, setState] = useState<MeetingState>('setup');
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const [pending, setPending] = useState(0);
@@ -109,6 +111,9 @@ export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceH
   const mutedChannelsRef = useRef<ChannelValues<boolean>>({ microphone: false, computer: false });
   const transcriptionChainRef = useRef<Promise<void>>(Promise.resolve());
   const transcriptRef = useRef<TranscriptSegment[]>([]);
+  const finalizedIdsRef = useRef(new Set<string>());
+  const transcriptCallbackRef = useRef(onTranscriptUpdate);
+  transcriptCallbackRef.current = onTranscriptUpdate;
   const analyzedSegmentsRef = useRef(new Map<string, string>());
   const [lastAnalyzedSegmentId, setLastAnalyzedSegmentId] = useState<string | null>(null);
   const startInFlightRef = useRef(false);
@@ -133,19 +138,10 @@ export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceH
     if (event.type === 'error') { setError(event.message); return; }
     const text = event.text.trim();
     if (!text) return;
-    const id = `alibaba-${event.sentenceId}`;
-    const next = [...transcriptRef.current];
-    const index = next.findIndex((segment) => segment.id === id);
-    const segment: TranscriptSegment = {
-      id,
-      createdAt: index >= 0 ? next[index].createdAt : new Date().toISOString(),
-      source: 'mixed',
-      text,
-    };
-    if (index >= 0) next[index] = segment;
-    else next.push(segment);
-    transcriptRef.current = next;
-    setSegments(next);
+    const result = qwenInsightUpdate(transcriptRef.current, finalizedIdsRef.current, event.sentenceId, text, event.sentenceEnd, new Date().toISOString());
+    transcriptRef.current = result.segments;
+    setSegments(result.segments);
+    transcriptCallbackRef.current(result.update);
   }), []);
 
   useEffect(() => window.persona.onMeetingAnalysisProgress(setAnalysisProgress), []);
@@ -163,6 +159,7 @@ export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceH
         const next = [...transcriptRef.current, { id: crypto.randomUUID(), createdAt: new Date().toISOString(), source: sourceLabelRef.current, text }];
         transcriptRef.current = next;
         setSegments(next);
+        transcriptCallbackRef.current({ finalized: next.slice(-9, -1).map((item) => item.text), liveText: text, isFinal: true, segmentId: next[next.length - 1].id });
       }
     } catch (reason) {
       setError(errorMessage(reason));
@@ -363,6 +360,7 @@ export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceH
   const endSession = async () => {
     if (state !== 'recording') return;
     setState('ending');
+    onSessionActiveChange(false);
     const recorder = recorderRef.current;
     const stopped = recorder?.state === 'recording'
       ? new Promise<void>((resolve) => recorder.addEventListener('stop', () => resolve(), { once: true }))
@@ -378,7 +376,6 @@ export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceH
     await stopped;
     await transcriptionChainRef.current;
     setState('finished');
-    onSessionActiveChange(false);
   };
 
   const analyzeTranscript = async () => {
@@ -420,6 +417,7 @@ export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceH
     generationRef.current += 1;
     releaseMedia();
     transcriptRef.current = [];
+    finalizedIdsRef.current.clear();
     analyzedSegmentsRef.current.clear();
     setLastAnalyzedSegmentId(null);
     setSegments([]);

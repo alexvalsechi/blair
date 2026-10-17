@@ -7,7 +7,7 @@ import type {
   PublicSettings,
   SaveSettingsInput,
   ShortcutAction,
-  StreamEvent, HistoryEntry, Diagnostics, MeetingSummaryInput, TranscribeInput, AlibabaTranscriptionEvent, AssistantProfile, SaveAssistantProfileInput, Attachment, MeetingAnalysisProgress,
+  StreamEvent, HistoryEntry, Diagnostics, MeetingSummaryInput, TranscribeInput, AlibabaTranscriptionEvent, AssistantProfile, SaveAssistantProfileInput, Attachment, MeetingAnalysisProgress, InsightInput, InsightResult,
 } from './contracts.js';
 
 contextBridge.exposeInMainWorld('persona', {
@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('persona', {
     return () => ipcRenderer.removeListener('settings:updated', listener);
   },
   testConnection: (): Promise<AskResult> => ipcRenderer.invoke('settings:test'),
+  testTypeSafeConnection: (): Promise<boolean> => ipcRenderer.invoke('settings:typesafe-test'),
   listModels: (): Promise<string[]> => ipcRenderer.invoke('models:list'),
   listAlibabaModels: (): Promise<string[]> => ipcRenderer.invoke('models:list-alibaba'),
   listTranscriptionModels: (): Promise<string[]> => ipcRenderer.invoke('models:transcription-list'),
@@ -61,6 +62,8 @@ contextBridge.exposeInMainWorld('persona', {
   },
   summarizeMeeting: (input: MeetingSummaryInput): Promise<AskResult> => ipcRenderer.invoke('meeting:summarize', input),
   cancelMeetingAnalysis: (): void => ipcRenderer.send('meeting:cancel'),
+  evaluateInsight: (input: InsightInput): Promise<InsightResult> => ipcRenderer.invoke('insight:evaluate', input),
+  cancelInsight: (): void => ipcRenderer.send('insight:cancel'),
   onMeetingAnalysisProgress: (callback: (progress: MeetingAnalysisProgress) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, value: MeetingAnalysisProgress) => callback(value);
     ipcRenderer.on('meeting:progress', listener);

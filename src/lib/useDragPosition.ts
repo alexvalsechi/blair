@@ -2,7 +2,7 @@ import { PointerEvent as ReactPointerEvent, useCallback, useEffect, useState } f
 
 export type Offset = { x: number; y: number };
 
-const DRAGGABLE_SELECTOR = '.prompt-rail, .answer-panel, .command-dock, .capture-picker, .meeting-panel, .context-panel';
+const DRAGGABLE_SELECTOR = '.prompt-rail, .answer-panel, .insight-panel, .command-dock, .capture-picker, .meeting-panel, .context-panel';
 const NON_DRAG_SELECTOR = 'button, a, input, textarea, select, [contenteditable="true"], [role="button"]';
 
 function clampMovement(bounds: DOMRect | null, deltaX: number, deltaY: number): Offset {

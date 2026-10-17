@@ -6,7 +6,7 @@ import type {
   PublicSettings,
   SaveSettingsInput,
   ShortcutAction,
-  StreamEvent, HistoryEntry, Diagnostics, MeetingSummaryInput, TranscribeInput, AlibabaTranscriptionEvent, AssistantProfile, SaveAssistantProfileInput, Attachment, MeetingAnalysisProgress,
+  StreamEvent, HistoryEntry, Diagnostics, MeetingSummaryInput, TranscribeInput, AlibabaTranscriptionEvent, AssistantProfile, SaveAssistantProfileInput, Attachment, MeetingAnalysisProgress, InsightInput, InsightResult,
 } from '../electron/contracts';
 
 declare global {
@@ -16,6 +16,7 @@ declare global {
       saveSettings(input: SaveSettingsInput): Promise<PublicSettings>;
       onSettingsUpdated(callback: (settings: PublicSettings) => void): () => void;
       testConnection(): Promise<AskResult>;
+      testTypeSafeConnection(): Promise<boolean>;
       listModels(): Promise<string[]>;
       listAlibabaModels(): Promise<string[]>;
       listTranscriptionModels(): Promise<string[]>;
@@ -49,6 +50,8 @@ declare global {
       onAlibabaTranscriptionEvent(callback: (event: AlibabaTranscriptionEvent) => void): () => void;
       summarizeMeeting(input: MeetingSummaryInput): Promise<AskResult>;
       cancelMeetingAnalysis(): void;
+      evaluateInsight(input: InsightInput): Promise<InsightResult>;
+      cancelInsight(): void;
       onMeetingAnalysisProgress(callback: (progress: MeetingAnalysisProgress) => void): () => void;
       setOpacity(value: number): Promise<PublicSettings>;
       setClickThrough(enabled: boolean): void;

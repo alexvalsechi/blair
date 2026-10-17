@@ -1,6 +1,7 @@
 export type PublicSettings = {
   hasApiKey: boolean;
   hasAlibabaApiKey: boolean;
+  hasTypeSafeApiKey: boolean;
   analysisProvider: 'openai' | 'alibaba';
   model: string;
   transcriptionModel: string;
@@ -24,6 +25,7 @@ export type AlibabaReasoningEffort = 'default' | 'none' | 'low' | 'medium' | 'xh
 export type SaveSettingsInput = {
   apiKey?: string;
   alibabaApiKey?: string;
+  typeSafeApiKey?: string;
   alibabaWorkspaceHost?: string;
   captureSourceId?: string;
   analysisProvider?: 'openai' | 'alibaba';
@@ -168,6 +170,22 @@ export type MeetingSummaryInput = {
   transcript: string;
   profileId?: string;
 };
+
+export type InsightTranscriptUpdate = {
+  finalized: string[];
+  liveText: string;
+  isFinal: boolean;
+  segmentId: string;
+};
+
+export type InsightInput = InsightTranscriptUpdate & {
+  profileId: string;
+  visibleSuggestion: string;
+};
+
+export type InsightResult =
+  | { status: 'suggestion'; text: string }
+  | { status: 'skipped' };
 
 export type ShortcutAction =
   | 'ask'

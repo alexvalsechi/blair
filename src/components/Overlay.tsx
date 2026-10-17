@@ -5,9 +5,10 @@ import {
   Camera,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Copy,
   FileDown,
-  EyeOff,
   GripVertical,
   Mic,
   Layers3,
@@ -28,6 +29,7 @@ import { MeetingPanel } from './MeetingPanel';
 import { ContextPanel } from './ContextPanel';
 import { AnswerContent } from './AnswerContent';
 import { useDragPosition } from '../lib/useDragPosition';
+import { useLiveInsights } from '../lib/useLiveInsights';
 
 type AnswerState =
   | { status: 'idle'; text: string }
@@ -43,7 +45,7 @@ const initialAnswer: AnswerState = {
 };
 
 export function Overlay() {
-  const [settings, setSettings] = useState({ opacity: 0.86, hasApiKey: false, hasAlibabaApiKey: false, analysisProvider: 'openai' as 'openai' | 'alibaba', alibabaWorkspaceHost: '', transcriptionProvider: 'openai' as 'openai' | 'alibaba', model: 'gpt-5.5', scale: 1, layoutPosition: 'center' });
+  const [settings, setSettings] = useState({ opacity: 0.86, hasApiKey: false, hasAlibabaApiKey: false, hasTypeSafeApiKey: false, analysisProvider: 'openai' as 'openai' | 'alibaba', alibabaWorkspaceHost: '', transcriptionProvider: 'openai' as 'openai' | 'alibaba', model: 'gpt-5.5', scale: 1, layoutPosition: 'center' });
   const hasAnalysisApiKey = settings.analysisProvider === 'alibaba' ? settings.hasAlibabaApiKey : settings.hasApiKey;
   const [promptOpen, setPromptOpen] = useState(false);
   const [prompt, setPrompt] = useState('');
@@ -72,6 +74,8 @@ export function Overlay() {
   const submittedDraftRef = useRef<{ prompt: string; imageDataUrl?: string; attachments: Attachment[]; selectedMemory: MemoryContext[] } | null>(null);
   const [meetingOpen, setMeetingOpen] = useState(false);
   const [meetingActive, setMeetingActive] = useState(false);
+  const [insightCollapsed, setInsightCollapsed] = useState(false);
+  const [insightFontSize, setInsightFontSize] = useState(14);
   const [meetingIsAnalyzing, setMeetingIsAnalyzing] = useState(false);
   const [transcriptAnalysisRequestId, setTranscriptAnalysisRequestId] = useState(0);
   const [contextOpen, setContextOpen] = useState(false);
@@ -79,11 +83,14 @@ export function Overlay() {
   const agentSwitcherRef = useRef<HTMLDivElement>(null);
   const [profiles, setProfiles] = useState<AssistantProfile[]>([]);
   const [activeProfileId, setActiveProfileId] = useState(() => localStorage.getItem('persona.activeProfile') ?? 'general');
+  const { insight, suggestions, suggestionIndex, navigateSuggestions, onTranscript, onSessionActiveChange: onInsightSessionChange } = useLiveInsights({ profileId: activeProfileId, hasTypeSafeApiKey: settings.hasTypeSafeApiKey, hasAnalysisApiKey });
+  const onMeetingSessionChange = useCallback((active: boolean) => { setMeetingActive(active); onInsightSessionChange(active); }, [onInsightSessionChange]);
   const [selectedMemory, setSelectedMemory] = useState<MemoryContext[]>([]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const promptDrag = useDragPosition({ x: 0, y: 0 }, 'persona.overlay.prompt-position');
   const answerDrag = useDragPosition({ x: 0, y: 0 }, 'persona.overlay.answer-position');
+  const insightDrag = useDragPosition({ x: 0, y: 0 }, 'persona.overlay.insight-position');
   const dockDrag = useDragPosition({ x: 0, y: 0 }, 'persona.overlay.dock-position');
 
   const exportAnswerPdf = async () => {
@@ -145,16 +152,16 @@ export function Overlay() {
       window.removeEventListener('load', schedulePublish);
       window.persona.setInteractiveRegions([]);
     };
-  }, [promptOpen, answerOpen, dockVisible, meetingOpen, contextOpen, agentMenuOpen, attachments.length, selectedMemory.length, Boolean(pendingCapture), Boolean(promptError), promptDrag.offset.x, promptDrag.offset.y, answerDrag.offset.x, answerDrag.offset.y, dockDrag.offset.x, dockDrag.offset.y]);
+  }, [promptOpen, answerOpen, dockVisible, meetingOpen, meetingActive, insightCollapsed, insight.status, insight.text, contextOpen, agentMenuOpen, attachments.length, selectedMemory.length, Boolean(pendingCapture), Boolean(promptError), promptDrag.offset.x, promptDrag.offset.y, answerDrag.offset.x, answerDrag.offset.y, insightDrag.offset.x, insightDrag.offset.y, dockDrag.offset.x, dockDrag.offset.y]);
 
   useEffect(() => {
     void window.persona.getSettings().then((value) => {
-      setSettings({ opacity: value.opacity, hasApiKey: value.hasApiKey, hasAlibabaApiKey: value.hasAlibabaApiKey, analysisProvider: value.analysisProvider, alibabaWorkspaceHost: value.alibabaWorkspaceHost, transcriptionProvider: value.transcriptionProvider, model: value.model, scale: value.scale, layoutPosition: value.layoutPosition });
+      setSettings({ opacity: value.opacity, hasApiKey: value.hasApiKey, hasAlibabaApiKey: value.hasAlibabaApiKey, hasTypeSafeApiKey: value.hasTypeSafeApiKey, analysisProvider: value.analysisProvider, alibabaWorkspaceHost: value.alibabaWorkspaceHost, transcriptionProvider: value.transcriptionProvider, model: value.model, scale: value.scale, layoutPosition: value.layoutPosition });
     });
   }, []);
 
   useEffect(() => window.persona.onSettingsUpdated((value) => {
-    setSettings({ opacity: value.opacity, hasApiKey: value.hasApiKey, hasAlibabaApiKey: value.hasAlibabaApiKey, analysisProvider: value.analysisProvider, alibabaWorkspaceHost: value.alibabaWorkspaceHost, transcriptionProvider: value.transcriptionProvider, model: value.model, scale: value.scale, layoutPosition: value.layoutPosition });
+    setSettings({ opacity: value.opacity, hasApiKey: value.hasApiKey, hasAlibabaApiKey: value.hasAlibabaApiKey, hasTypeSafeApiKey: value.hasTypeSafeApiKey, analysisProvider: value.analysisProvider, alibabaWorkspaceHost: value.alibabaWorkspaceHost, transcriptionProvider: value.transcriptionProvider, model: value.model, scale: value.scale, layoutPosition: value.layoutPosition });
   }), []);
 
   useEffect(() => { void window.persona.listProfiles().then(setProfiles); }, []);
@@ -477,12 +484,38 @@ export function Overlay() {
           {pendingCapture && <div className="pending-capture-preview"><img src={pendingCapture} alt="Prévia da captura anexada" /><span>Captura anexada</span><button type="button" aria-label="Remover captura anexada" title="Remover captura" onClick={() => setPendingCapture(null)}><X size={14} /></button></div>}
           <div className="prompt-context-row">
             <button type="button" onClick={() => setContextOpen(true)}><Layers3 size={14} /> {profiles.find((item) => item.id === activeProfileId)?.name ?? 'Copiloto geral'}{selectedMemory.length > 0 && <span>{selectedMemory.length} memória{selectedMemory.length > 1 ? 's' : ''}</span>}</button>
+            <button type="button" onClick={() => void openCapture()} disabled={isCapturing || answer.status === 'loading'}><Camera size={14} /> {isCapturing ? 'Capturando…' : 'Capturar tela'}</button>
             <button type="button" onClick={() => void addAttachments()}><Paperclip size={14} /> Anexar</button>
             {attachments.map((attachment) => <span className="attachment-chip" key={attachment.id}>{attachment.name}<button type="button" aria-label={`Remover ${attachment.name}`} onClick={() => setAttachments((items) => items.filter((item) => item.id !== attachment.id))}><X size={12} /></button></span>)}
           </div>
           {promptError && <p className="prompt-error" role="alert">{promptError}</p>}
         </form>
       )}
+
+      {meetingActive && <aside className={`insight-panel glass-surface ${insightCollapsed ? 'is-collapsed' : ''}`} style={{ ['--drag-x' as string]: `${insightDrag.offset.x}px`, ['--drag-y' as string]: `${insightDrag.offset.y}px` }} data-interactive aria-label="Resposta sugerida">
+        <header className="insight-header drag-grip" tabIndex={0} title="Arraste para mover. Use as setas para ajustar a posição." onPointerDown={insightDrag.startDrag} onKeyDown={(event) => { if (event.target !== event.currentTarget || !event.key.startsWith('Arrow')) return; event.preventDefault(); insightDrag.moveBy(event.key === 'ArrowLeft' ? -16 : event.key === 'ArrowRight' ? 16 : 0, event.key === 'ArrowUp' ? -16 : event.key === 'ArrowDown' ? 16 : 0); }}>
+          <span className="insight-heading"><Sparkles size={15} aria-hidden="true" /> Resposta sugerida</span>
+          <span className="insight-header-actions"><span className={`insight-status-dot ${insight.status}`} aria-hidden="true" /><button className="icon-button" type="button" aria-label={insightCollapsed ? 'Expandir resposta sugerida' : 'Recolher resposta sugerida'} aria-expanded={!insightCollapsed} onClick={() => setInsightCollapsed((value) => !value)}>{insightCollapsed ? <Plus size={16} /> : <Minus size={16} />}</button></span>
+        </header>
+        {!insightCollapsed && <div className="insight-body" aria-live="polite">
+          {insight.text ? <div className="insight-text" style={{ fontSize: `${insightFontSize}px` }}><AnswerContent text={insight.text} /></div> : <p className="insight-placeholder">{insight.status === 'missing-key' ? 'Insights aguardando configuração.' : insight.status === 'loading' ? 'Preparando sugestão…' : 'Aguardando uma pergunta ou dúvida clara.'}</p>}
+          {insight.status === 'loading' && insight.text && <span className="insight-meta">Analisando a fala recente…</span>}
+          {insight.message && <p className="insight-message" role={insight.status === 'error' ? 'alert' : 'status'}>{insight.message}</p>}
+          {insight.status === 'missing-key' && <button type="button" className="insight-configure" onClick={() => void window.persona.openSettings()}>Configurar TypeSafe</button>}
+        </div>}
+        {!insightCollapsed && suggestions.length > 0 && <footer className="insight-controls" aria-label="Controles das respostas sugeridas">
+          <div className="insight-pagination">
+            <button className="icon-button" type="button" aria-label="Resposta sugerida anterior" title="Resposta sugerida anterior" disabled={suggestionIndex <= 0} onClick={() => navigateSuggestions(-1)}><ChevronLeft size={16} /></button>
+            <span aria-live="polite">{suggestionIndex + 1} / {suggestions.length}</span>
+            <button className="icon-button" type="button" aria-label="Próxima resposta sugerida" title="Próxima resposta sugerida" disabled={suggestionIndex >= suggestions.length - 1} onClick={() => navigateSuggestions(1)}><ChevronRight size={16} /></button>
+          </div>
+          <div className="insight-font-controls" aria-label="Tamanho da fonte">
+            <button className="icon-button" type="button" aria-label="Diminuir fonte da resposta sugerida" title="Diminuir fonte" disabled={insightFontSize <= 11} onClick={() => setInsightFontSize((size) => Math.max(11, size - 1))}><Minus size={14} /></button>
+            <span aria-label={`Fonte ${insightFontSize} pixels`}>A</span>
+            <button className="icon-button" type="button" aria-label="Aumentar fonte da resposta sugerida" title="Aumentar fonte" disabled={insightFontSize >= 24} onClick={() => setInsightFontSize((size) => Math.min(24, size + 1))}><Plus size={14} /></button>
+          </div>
+        </footer>}
+      </aside>}
 
       {(answerOpen || meetingOpen) && (
         <section ref={answerPanelRef} className={`answer-panel glass-surface answer-${answer.status} ${meetingOpen ? 'has-meeting-tabs' : ''}`} style={{ ['--drag-x' as string]: `${answerDrag.offset.x}px`, ['--drag-y' as string]: `${answerDrag.offset.y}px`, ...(answerSize ? { width: `${answerSize.width}px`, height: `${answerSize.height}px`, left: `${answerSize.left}px`, top: `${answerSize.top}px`, transform: `translate(${answerDrag.offset.x - answerSize.dragOriginX}px, ${answerDrag.offset.y - answerSize.dragOriginY}px) scale(var(--overlay-scale, 1))`, transformOrigin: 'top left', paddingInline: `${Math.max(6, Math.min(26, (answerSize.width - 120) / 2))}px` } : {}) }} data-interactive aria-live="polite">
@@ -526,7 +559,8 @@ export function Overlay() {
               isVisible={responseTab === 'transcript'}
               activeProfileId={activeProfileId}
               analysisRequestId={transcriptAnalysisRequestId}
-              onSessionActiveChange={setMeetingActive}
+              onSessionActiveChange={onMeetingSessionChange}
+              onTranscriptUpdate={onTranscript}
               onAnalysisStateChange={setMeetingIsAnalyzing}
               onSummary={(text, usage) => {
                 if (answer.status === 'success' && answer.text.trim()) setAnswerHistory((current) => [...current, { id: crypto.randomUUID(), text: answer.text }]);
@@ -585,31 +619,25 @@ export function Overlay() {
       )}
 
       {dockVisible && (
-        <nav className="command-dock glass-surface" style={{ ['--drag-x' as string]: `${dockDrag.offset.x}px`, ['--drag-y' as string]: `${dockDrag.offset.y}px` }} data-interactive aria-label="Ações rápidas" onPointerDown={dockDrag.startDrag} title="Arraste pela área livre para mover a barra; os botões continuam clicáveis">
-          <span className={`dock-drag-handle drag-grip ${interactionMode ? 'is-interactive' : ''}`}><GripVertical size={16} /></span>
-          <button className="dock-action dock-primary" type="button" onClick={openPrompt}>
-            <MessageSquareText size={19} /> Perguntar
-          </button>
-          <button className="dock-action" type="button" onClick={() => void openCapture()} disabled={isCapturing || answer.status === 'loading'}>
-            <Camera size={19} /> {isCapturing ? 'Capturando…' : 'Capturar'}
-          </button>
-          <button className="dock-action dock-primary" type="button" onClick={openMeeting}>
-            <Mic size={18} /> Começar a ouvir <kbd>Ctrl+D</kbd>
-          </button>
-          <span className="dock-divider" aria-hidden="true" />
-          <div className="agent-switcher" ref={agentSwitcherRef}>
-            <button className="provider-status" type="button" aria-haspopup="menu" aria-expanded={agentMenuOpen} onClick={() => { setAgentMenuOpen((open) => !open); void window.persona.listProfiles().then(setProfiles); }}>
-              <Bot size={15} />
-              {profiles.find((profile) => profile.id === activeProfileId)?.name ?? 'Copiloto geral'}
-              <ChevronDown size={14} />
+        <nav className="command-dock glass-surface" style={{ ['--drag-x' as string]: `${dockDrag.offset.x}px`, ['--drag-y' as string]: `${dockDrag.offset.y}px` }} data-interactive aria-label="Ações rápidas" onPointerDown={dockDrag.startDrag}>
+          <div className="agent-switcher" ref={agentSwitcherRef} data-interactive>
+            <button className="provider-status" type="button" aria-label={`Agente selecionado: ${profiles.find((profile) => profile.id === activeProfileId)?.name ?? 'Copiloto geral'}. Trocar agente`} aria-haspopup="menu" aria-expanded={agentMenuOpen} onClick={() => { setAgentMenuOpen((open) => !open); void window.persona.listProfiles().then(setProfiles); }}>
+              <Bot size={16} aria-hidden="true" />
+              <span>{profiles.find((profile) => profile.id === activeProfileId)?.name ?? 'Copiloto geral'}</span>
+              <ChevronDown size={14} aria-hidden="true" />
             </button>
             {agentMenuOpen && <div className="agent-quick-menu" data-interactive role="menu" aria-label="Trocar agente">{profiles.map((profile) => <button key={profile.id} type="button" role="menuitemradio" aria-checked={profile.id === activeProfileId} className={profile.id === activeProfileId ? 'is-selected' : ''} onClick={() => { setActiveProfileId(profile.id); localStorage.setItem('persona.activeProfile', profile.id); setAgentMenuOpen(false); }}><span className="profile-avatar">{profile.name.slice(0, 1).toUpperCase()}</span><span><strong>{profile.name}</strong><small>{profile.builtIn ? 'Agente Persona' : 'Seu especialista'}</small></span>{profile.id === activeProfileId && <Check size={15} />}</button>)}<button type="button" className="agent-menu-settings" onClick={() => { setAgentMenuOpen(false); void window.persona.openSettings(); }}>Gerenciar agentes <SettingsIcon size={14} /></button></div>}
           </div>
-          <button className="icon-button dock-icon" type="button" aria-label="Abrir configurações" onClick={() => void window.persona.openSettings()}>
-            <SettingsIcon size={18} />
+          <span className={`dock-drag-handle drag-grip ${interactionMode ? 'is-interactive' : ''}`} title="Arraste para mover a barra"><GripVertical size={19} aria-hidden="true" /></span>
+          <button className="dock-action dock-listen" type="button" onClick={openMeeting}>
+            <Mic size={19} aria-hidden="true" /> Ouvir
           </button>
-          <button className="icon-button dock-icon" type="button" aria-label="Ocultar barra (Ctrl+M para mostrar)" title="Ocultar barra — Ctrl+M para mostrar" onClick={() => setDockVisible(false)}>
-            <EyeOff size={18} />
+          <button className="dock-action dock-primary" type="button" onClick={openPrompt}>
+            <MessageSquareText size={19} aria-hidden="true" /> Perguntar
+          </button>
+          <span className="dock-divider" aria-hidden="true" />
+          <button className="icon-button dock-icon" type="button" aria-label="Abrir configurações" onClick={() => void window.persona.openSettings()}>
+            <SettingsIcon size={20} aria-hidden="true" />
           </button>
         </nav>
       )}

@@ -48,6 +48,10 @@ export function Settings() {
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [alibabaApiKey, setAlibabaApiKey] = useState('');
+  const [typeSafeApiKey, setTypeSafeApiKey] = useState('');
+  const [showTypeSafeKey, setShowTypeSafeKey] = useState(false);
+  const [hasTypeSafeApiKey, setHasTypeSafeApiKey] = useState(false);
+  const [testingTypeSafe, setTestingTypeSafe] = useState(false);
   const [showAlibabaKey, setShowAlibabaKey] = useState(false);
   const [hasAlibabaApiKey, setHasAlibabaApiKey] = useState(false);
   const [alibabaWorkspaceHost, setAlibabaWorkspaceHost] = useState('');
@@ -84,6 +88,7 @@ export function Settings() {
     void window.persona.getSettings().then((settings) => {
       setHasApiKey(settings.hasApiKey); setContentProtection(settings.contentProtection);
       setHasAlibabaApiKey(settings.hasAlibabaApiKey); setAlibabaWorkspaceHost(settings.alibabaWorkspaceHost);
+      setHasTypeSafeApiKey(settings.hasTypeSafeApiKey);
       setCaptureSourceId(settings.captureSourceId);
       setHistoryEnabled(settings.historyEnabled); setPolicyModels(settings.policyModels); setAlibabaPolicyModels(settings.alibabaPolicyModels); setAlibabaReasoningEfforts(settings.alibabaReasoningEfforts); setAnalysisProvider(settings.analysisProvider); setTranscriptionModel(settings.transcriptionModel); setTranscriptionProvider(settings.transcriptionProvider);
       setScale(settings.scale); setLayoutPosition(settings.layoutPosition); setSettingsLoaded(true);
@@ -120,9 +125,10 @@ export function Settings() {
   const saveSettings = async (event?: FormEvent) => {
     event?.preventDefault(); setBusy(true); setNotice(null);
     try {
-      const saved = await window.persona.saveSettings({ apiKey: apiKey.trim() || undefined, alibabaApiKey: alibabaApiKey.trim() || undefined, alibabaWorkspaceHost, captureSourceId, analysisProvider, model: policyModels.balanced, transcriptionModel, transcriptionProvider, contentProtection, historyEnabled, modelPolicy: 'balanced', policyModels, alibabaPolicyModels, alibabaReasoningEfforts, scale, layoutPosition });
+      const saved = await window.persona.saveSettings({ apiKey: apiKey.trim() || undefined, alibabaApiKey: alibabaApiKey.trim() || undefined, typeSafeApiKey: typeSafeApiKey.trim() || undefined, alibabaWorkspaceHost, captureSourceId, analysisProvider, model: policyModels.balanced, transcriptionModel, transcriptionProvider, contentProtection, historyEnabled, modelPolicy: 'balanced', policyModels, alibabaPolicyModels, alibabaReasoningEfforts, scale, layoutPosition });
       setHasApiKey(saved.hasApiKey); setApiKey(''); setHasAlibabaApiKey(saved.hasAlibabaApiKey); setAlibabaWorkspaceHost(saved.alibabaWorkspaceHost);
       setAlibabaReasoningEfforts(saved.alibabaReasoningEfforts);
+      setHasTypeSafeApiKey(saved.hasTypeSafeApiKey); setTypeSafeApiKey('');
       if (alibabaApiKey.trim() && !saved.hasAlibabaApiKey) {
         setNotice({ tone: 'error', text: 'As configurações foram salvas, mas a API Key Alibaba não foi confirmada no armazenamento seguro. A chave continua no campo para você tentar novamente.' });
         return;
@@ -186,6 +192,13 @@ export function Settings() {
     try { const result = await window.persona.testConnection(); setNotice({ tone: 'success', text: result.text }); }
     catch (error) { setNotice({ tone: 'error', text: errorMessage(error) }); }
     finally { setTesting(false); }
+  };
+
+  const testTypeSafeConnection = async () => {
+    setTestingTypeSafe(true); setNotice(null);
+    try { await window.persona.testTypeSafeConnection(); setNotice({ tone: 'success', text: 'Conexão TypeSafe pronta para classificar insights.' }); }
+    catch (error) { setNotice({ tone: 'error', text: errorMessage(error) }); }
+    finally { setTestingTypeSafe(false); }
   };
 
   const saveAgent = async (event: FormEvent) => {
@@ -282,6 +295,14 @@ export function Settings() {
               <label className="settings-label" htmlFor="alibaba-workspace-host">API Host / Workspace</label>
               <input className="settings-input" id="alibaba-workspace-host" value={alibabaWorkspaceHost} onChange={(event) => setAlibabaWorkspaceHost(event.target.value)} placeholder="ws-…ap-southeast-1.maas.aliyuncs.com" autoComplete="off" spellCheck={false} />
               <p className="field-help">Copie o valor “API Host” da tela Quick Access. A chave e o host precisam ser da mesma região e workspace.</p>
+          </section>}
+          {page === 'connection' && <section className="settings-section" aria-label="Configuração TypeSafe">
+            <h2>TypeSafe · Jev</h2>
+            <p className="settings-section-copy">O Jev avalia as falas recentes para decidir quando mostrar uma resposta sugerida. A transcrição é enviada à TypeSafe durante a sessão Ouvir.</p>
+            <label className="settings-label" htmlFor="typesafe-key">API Key da TypeSafe</label>
+            <div className="secret-field"><input id="typesafe-key" type={showTypeSafeKey ? 'text' : 'password'} value={typeSafeApiKey} onChange={(event) => setTypeSafeApiKey(event.target.value)} placeholder={hasTypeSafeApiKey ? 'Chave protegida — digite apenas para substituir' : 'Cole a API Key da TypeSafe'} autoComplete="off" spellCheck={false} /><button type="button" aria-label={showTypeSafeKey ? 'Ocultar chave TypeSafe' : 'Mostrar chave TypeSafe'} onClick={() => setShowTypeSafeKey((value) => !value)}>{showTypeSafeKey ? <EyeOff size={17} /> : <Eye size={17} />}</button></div>
+            <p className="field-help">A chave fica protegida pelo Windows e não é exibida novamente. Salve antes de testar a conexão.</p>
+            <div className="settings-button-row"><button className="settings-secondary" type="button" disabled={!hasTypeSafeApiKey || testingTypeSafe} onClick={() => void testTypeSafeConnection()}>{testingTypeSafe ? 'Testando…' : 'Testar TypeSafe'}</button></div>
           </section>}
           {page === 'models' && <>
             <div className="settings-page-heading"><div><h1>Modelos</h1><p>Escolha os provedores e modelos para análise, chat e transcrição.</p></div>{!(modelTask === 'transcription' && transcriptionProvider === 'alibaba') && <button className="settings-secondary" type="button" onClick={() => void loadModels()} disabled={loadingModels}>{loadingModels ? 'Buscando…' : 'Atualizar modelos'}</button>}</div>
