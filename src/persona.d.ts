@@ -6,7 +6,7 @@ import type {
   PublicSettings,
   SaveSettingsInput,
   ShortcutAction,
-  StreamEvent, HistoryEntry, Diagnostics, MeetingSummaryInput, TranscribeInput, AlibabaTranscriptionEvent, AssistantProfile, SaveAssistantProfileInput, Attachment, MeetingAnalysisProgress, InsightInput, InsightResult,
+  StreamEvent, HistoryEntry, Diagnostics, MeetingSummaryInput, TranscribeInput, AlibabaTranscriptionEvent, AssistantProfile, SaveAssistantProfileInput, Attachment, MeetingAnalysisProgress, InsightInput, InsightProgress, InsightResult,
 } from '../electron/contracts';
 
 declare global {
@@ -51,6 +51,7 @@ declare global {
       summarizeMeeting(input: MeetingSummaryInput): Promise<AskResult>;
       cancelMeetingAnalysis(): void;
       evaluateInsight(input: InsightInput): Promise<InsightResult>;
+      onInsightProgress(callback: (progress: InsightProgress) => void): () => void;
       cancelInsight(): void;
       onMeetingAnalysisProgress(callback: (progress: MeetingAnalysisProgress) => void): () => void;
       setOpacity(value: number): Promise<PublicSettings>;

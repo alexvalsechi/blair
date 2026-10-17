@@ -1,6 +1,6 @@
 import { Activity, Bot, Check, ChevronRight, Eye, EyeOff, Keyboard, LockKeyhole, MessageSquareText, Mic, Monitor, Paperclip, Pencil, Plus, Save, Settings2, ShieldCheck, Sparkles, Trash2, X } from 'lucide-react';
 import { FormEvent, KeyboardEvent as ReactKeyboardEvent, useEffect, useMemo, useState } from 'react';
-import type { AlibabaReasoningEffort, AssistantProfile, Attachment, CaptureSource, ModelPolicy, SaveAssistantProfileInput } from '../../electron/contracts';
+import type { AlibabaReasoningEffort, AssistantProfile, Attachment, CaptureSource, InsightResponseLength, ModelPolicy, SaveAssistantProfileInput } from '../../electron/contracts';
 import { MAX_INSTRUCTIONS_LENGTH } from '../../electron/contracts';
 import { errorMessage } from '../lib/errors';
 import { alibabaTranscriptionModelPrice, analysisModelPrice, transcriptionModelPrice } from '../lib/model-pricing';
@@ -58,9 +58,13 @@ export function Settings() {
   const [captureSourceId, setCaptureSourceId] = useState('');
   const [hasApiKey, setHasApiKey] = useState(false);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [supportsIndependentInsightSettings, setSupportsIndependentInsightSettings] = useState(false);
   const [policyModels, setPolicyModels] = useState<Record<ModelPolicy, string>>({ economy: 'gpt-5.5', balanced: 'gpt-5.5', quality: 'gpt-5.5' });
   const [alibabaPolicyModels, setAlibabaPolicyModels] = useState<Record<ModelPolicy, string>>({ economy: 'qwen-turbo', balanced: 'qwen-plus', quality: 'qwen-max' });
+  const [insightModels, setInsightModels] = useState<Record<'openai' | 'alibaba', string>>({ openai: 'gpt-5.5', alibaba: 'qwen-plus' });
+  const [insightResponseLength, setInsightResponseLength] = useState<InsightResponseLength>('medium');
   const [alibabaReasoningEfforts, setAlibabaReasoningEfforts] = useState<Record<string, AlibabaReasoningEffort>>({});
+  const [insightAlibabaReasoningEfforts, setInsightAlibabaReasoningEfforts] = useState<Record<string, AlibabaReasoningEffort>>({});
   const [analysisProvider, setAnalysisProvider] = useState<'openai' | 'alibaba'>('openai');
   const [transcriptionModel, setTranscriptionModel] = useState('gpt-4o-mini-transcribe');
   const [transcriptionProvider, setTranscriptionProvider] = useState<'openai' | 'alibaba'>('openai');
@@ -86,11 +90,17 @@ export function Settings() {
 
   useEffect(() => {
     void window.persona.getSettings().then((settings) => {
+      setSupportsIndependentInsightSettings(Boolean(settings.insightModels && settings.insightAlibabaReasoningEfforts));
       setHasApiKey(settings.hasApiKey); setContentProtection(settings.contentProtection);
       setHasAlibabaApiKey(settings.hasAlibabaApiKey); setAlibabaWorkspaceHost(settings.alibabaWorkspaceHost);
       setHasTypeSafeApiKey(settings.hasTypeSafeApiKey);
       setCaptureSourceId(settings.captureSourceId);
-      setHistoryEnabled(settings.historyEnabled); setPolicyModels(settings.policyModels); setAlibabaPolicyModels(settings.alibabaPolicyModels); setAlibabaReasoningEfforts(settings.alibabaReasoningEfforts); setAnalysisProvider(settings.analysisProvider); setTranscriptionModel(settings.transcriptionModel); setTranscriptionProvider(settings.transcriptionProvider);
+      setHistoryEnabled(settings.historyEnabled); setPolicyModels(settings.policyModels); setAlibabaPolicyModels(settings.alibabaPolicyModels);
+      setInsightModels(settings.insightModels ?? { openai: settings.policyModels?.balanced ?? settings.model ?? 'gpt-5.5', alibaba: settings.alibabaPolicyModels?.balanced ?? 'qwen-plus' });
+      setInsightResponseLength(settings.insightResponseLength ?? 'medium');
+      setAlibabaReasoningEfforts(settings.alibabaReasoningEfforts ?? {});
+      setInsightAlibabaReasoningEfforts(settings.insightAlibabaReasoningEfforts ?? settings.alibabaReasoningEfforts ?? {});
+      setAnalysisProvider(settings.analysisProvider); setTranscriptionModel(settings.transcriptionModel); setTranscriptionProvider(settings.transcriptionProvider);
       setScale(settings.scale); setLayoutPosition(settings.layoutPosition); setSettingsLoaded(true);
     }).catch((error) => setNotice({ tone: 'error', text: errorMessage(error) }));
     void window.persona.listProfiles().then(setProfiles);
@@ -99,6 +109,8 @@ export function Settings() {
   const selectedProfile = useMemo(() => profiles.find((profile) => profile.id === activeProfileId) ?? profiles[0], [activeProfileId, profiles]);
   const visibleModelOptions = analysisProvider === 'alibaba' ? alibabaModelOptions : modelOptions;
   const visiblePolicyModels = analysisProvider === 'alibaba' ? alibabaPolicyModels : policyModels;
+  const selectedInsightModel = insightModels?.[analysisProvider] ?? visiblePolicyModels.balanced;
+  const insightModelOptions = visibleModelOptions.includes(selectedInsightModel) ? visibleModelOptions : [selectedInsightModel, ...visibleModelOptions];
   const selectedAnalysisModel = visiblePolicyModels.balanced;
   const selectedIsLegacy = Boolean(selectedAnalysisModel && visibleModelOptions.length && !visibleModelOptions.includes(selectedAnalysisModel));
   const catalogModelOptions = !visibleModelOptions.length || visibleModelOptions.includes(selectedAnalysisModel) || loadingModels || !selectedAnalysisModel
@@ -106,6 +118,7 @@ export function Settings() {
     : [selectedAnalysisModel, ...visibleModelOptions];
   const selectedAlibabaModel = visiblePolicyModels.balanced;
   const selectedAlibabaReasoning = alibabaReasoningEfforts[selectedAlibabaModel] ?? 'default';
+  const selectedInsightReasoning = insightAlibabaReasoningEfforts?.[selectedInsightModel] ?? 'default';
   const chooseAnalysisModel = (modelId: string) => {
     if (analysisProvider === 'alibaba') setAlibabaPolicyModels({ economy: modelId, balanced: modelId, quality: modelId });
     else setPolicyModels({ economy: modelId, balanced: modelId, quality: modelId });
@@ -125,9 +138,11 @@ export function Settings() {
   const saveSettings = async (event?: FormEvent) => {
     event?.preventDefault(); setBusy(true); setNotice(null);
     try {
-      const saved = await window.persona.saveSettings({ apiKey: apiKey.trim() || undefined, alibabaApiKey: alibabaApiKey.trim() || undefined, typeSafeApiKey: typeSafeApiKey.trim() || undefined, alibabaWorkspaceHost, captureSourceId, analysisProvider, model: policyModels.balanced, transcriptionModel, transcriptionProvider, contentProtection, historyEnabled, modelPolicy: 'balanced', policyModels, alibabaPolicyModels, alibabaReasoningEfforts, scale, layoutPosition });
+      const saved = await window.persona.saveSettings({ apiKey: apiKey.trim() || undefined, alibabaApiKey: alibabaApiKey.trim() || undefined, typeSafeApiKey: typeSafeApiKey.trim() || undefined, alibabaWorkspaceHost, captureSourceId, analysisProvider, model: policyModels.balanced, transcriptionModel, transcriptionProvider, contentProtection, historyEnabled, modelPolicy: 'balanced', policyModels, alibabaPolicyModels, insightModels, insightResponseLength, alibabaReasoningEfforts, insightAlibabaReasoningEfforts, scale, layoutPosition });
       setHasApiKey(saved.hasApiKey); setApiKey(''); setHasAlibabaApiKey(saved.hasAlibabaApiKey); setAlibabaWorkspaceHost(saved.alibabaWorkspaceHost);
       setAlibabaReasoningEfforts(saved.alibabaReasoningEfforts);
+      setInsightAlibabaReasoningEfforts(saved.insightAlibabaReasoningEfforts ?? saved.alibabaReasoningEfforts ?? {});
+      setInsightResponseLength(saved.insightResponseLength ?? 'medium');
       setHasTypeSafeApiKey(saved.hasTypeSafeApiKey); setTypeSafeApiKey('');
       if (alibabaApiKey.trim() && !saved.hasAlibabaApiKey) {
         setNotice({ tone: 'error', text: 'As configurações foram salvas, mas a API Key Alibaba não foi confirmada no armazenamento seguro. A chave continua no campo para você tentar novamente.' });
@@ -314,6 +329,33 @@ export function Settings() {
             <p className="settings-section-copy">Escolha o modelo que será usado nas perguntas, análises e reuniões. Ferramentas e modalidades podem ter cobrança adicional.</p>
             <section className="model-catalog" aria-label="Modelos disponíveis">
               {catalogModelOptions.length ? catalogModelOptions.map((modelId) => <button type="button" key={modelId} className={`model-card ${visiblePolicyModels.balanced === modelId ? 'is-selected' : ''}`} onClick={() => chooseAnalysisModel(modelId)}><span className="model-icon">◎</span><span className="model-copy"><strong>{modelId}</strong><small>{modelId === visiblePolicyModels.balanced ? (selectedIsLegacy ? 'Selecionado · fora da lista de modelos atuais' : 'Selecionado para análise e chat') : `Modelo ${analysisProvider === 'alibaba' ? 'Alibaba Cloud' : 'OpenAI'}`}</small><small className="model-price">{analysisProvider === 'alibaba' ? 'Preço conforme tabela Model Studio' : analysisModelPrice(modelId)}</small></span>{visiblePolicyModels.balanced === modelId && <Check size={17} />}</button>) : <div className="model-empty"><Sparkles size={22} /><strong>{loadingModels ? 'Buscando modelos da sua conta…' : analysisProvider === 'alibaba' ? (hasAlibabaApiKey && alibabaWorkspaceHost ? 'Não foi possível carregar os modelos' : 'Verifique a conexão Alibaba Cloud') : (hasApiKey ? 'Não foi possível carregar os modelos' : 'Conecte a OpenAI para ver seus modelos')}</strong><span>{loadingModels ? 'A lista aparece aqui automaticamente assim que estiver pronta.' : analysisProvider === 'alibaba' ? 'Confirme a API Key e o API Host em Conexões ou tente atualizar a lista.' : (hasApiKey ? 'Confira sua conexão ou tente atualizar a lista.' : 'Você pode cadastrar uma chave na seção Conexões.')}</span>{!loadingModels && (analysisProvider === 'alibaba' ? hasAlibabaApiKey && alibabaWorkspaceHost : hasApiKey) && <button className="settings-secondary" type="button" onClick={() => void loadModels()} disabled={loadingModels}>Tentar novamente</button>}{analysisProvider === 'alibaba' && !hasAlibabaApiKey && <button className="settings-secondary" type="button" onClick={() => setPage('connection')}>Configurar API Key e Host</button>}</div>}
+            </section>
+            <section className="settings-section insight-model-settings" aria-labelledby="insight-model-title">
+              <h2 id="insight-model-title">Resposta sugerida (insight rápido)</h2>
+              <p className="settings-section-copy">Escolha um modelo separado para gerar respostas durante a transcrição. Ele usa o provedor selecionado acima e pode ser diferente do modelo das respostas padrão.</p>
+              <label className="settings-label" htmlFor="insight-model">Modelo da resposta sugerida
+                <select id="insight-model" className="settings-select" value={selectedInsightModel} disabled={!supportsIndependentInsightSettings} onChange={(event) => setInsightModels((current) => ({ ...current, [analysisProvider]: event.target.value }))}>
+                  {insightModelOptions.map((modelId) => <option key={modelId} value={modelId}>{modelId}</option>)}
+                </select>
+              </label>
+              <label className="settings-label" htmlFor="insight-response-length">Tamanho da resposta sugerida
+                <select id="insight-response-length" className="settings-select" value={insightResponseLength} disabled={!supportsIndependentInsightSettings} onChange={(event) => setInsightResponseLength(event.target.value as InsightResponseLength)}>
+                  <option value="short">Curta — até 60 palavras</option>
+                  <option value="medium">Média — até 250 palavras</option>
+                  <option value="complete">Completa — cerca de 1.000 palavras ou mais</option>
+                </select>
+              </label>
+              <p className="field-help">Define o nível de detalhe da resposta rápida. Respostas completas podem levar mais tempo e variam conforme a pergunta.</p>
+              {analysisProvider === 'alibaba' && supportsAlibabaReasoning(selectedInsightModel) && <label className="settings-label" htmlFor="insight-reasoning-effort">Intensidade de raciocínio do insight
+                <select id="insight-reasoning-effort" className="settings-select" value={selectedInsightReasoning} disabled={!supportsIndependentInsightSettings} onChange={(event) => setInsightAlibabaReasoningEfforts((current) => ({ ...current, [selectedInsightModel]: event.target.value as AlibabaReasoningEffort }))}>
+                  <option value="default">Padrão do modelo</option>
+                  <option value="none">Desativado — resposta mais direta</option>
+                  <option value="low">Baixo — mais rápido</option>
+                  <option value="medium">Médio</option>
+                  <option value="xhigh">Máximo — raciocínio mais profundo</option>
+                </select>
+              </label>}
+              <p className="field-help">{supportsIndependentInsightSettings ? 'Para a resposta padrão, continue selecionando um modelo no catálogo acima. A seleção rápida pode usar outro modelo da mesma conexão.' : 'O processo Electron ainda não expõe as configurações independentes. Reinicie o app de desenvolvimento para habilitar estes controles.'}</p>
             </section>
             </div>
             {analysisProvider === 'alibaba' && supportsAlibabaReasoning(selectedAlibabaModel) && <section className="settings-section alibaba-reasoning-settings" aria-labelledby="alibaba-reasoning-title">

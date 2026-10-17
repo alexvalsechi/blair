@@ -2,6 +2,7 @@ import {
   ArrowUp,
   AudioLines,
   Bot,
+  Bug,
   Camera,
   Check,
   ChevronDown,
@@ -19,10 +20,11 @@ import {
   Plus,
   Settings as SettingsIcon,
   Sparkles,
+  Trash2,
   X,
 } from 'lucide-react';
 import { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef, useState } from 'react';
-import type { AssistantProfile, Attachment, MemoryContext, ShortcutAction, StreamEvent, TokenUsage } from '../../electron/contracts';
+import type { AssistantProfile, Attachment, InsightDebugStep, MemoryContext, ShortcutAction, StreamEvent, TokenUsage } from '../../electron/contracts';
 import { errorMessage } from '../lib/errors';
 import { KeyHint } from './KeyHint';
 import { MeetingPanel } from './MeetingPanel';
@@ -38,6 +40,28 @@ type AnswerState =
   | { status: 'error'; text: string };
 type AnswerHistoryItem = { id: string; text: string };
 type ResponseTab = 'transcript' | 'answers';
+type InsightSize = { width: number; height: number; left?: number; top?: number; dragOriginX?: number; dragOriginY?: number };
+
+function insightDebugStepLabel(step: InsightDebugStep): string {
+  const labels: Record<InsightDebugStep['stage'], string> = {
+    context: 'Contexto', classification: 'Classificação Jev', question: 'Pergunta nova', fallback: 'Gatilho local', generation: 'Geração', novelty: 'Novidade', result: 'Resultado', error: 'Erro',
+  };
+  const outcomes: Record<string, string> = {
+    ready: 'pronto', ignored: 'ignorado', cancelled: 'cancelado', approved: 'aprovado', rejected: 'rejeitado',
+    started: 'iniciada', completed: 'concluída', empty: 'vazia', duplicate: 'duplicada', equivalent: 'equivalente',
+    unavailable: 'indisponível', failed: 'falhou', skipped: 'ignorada', suggestion: 'sugestão', error: 'erro',
+  };
+  return `${labels[step.stage]}: ${outcomes[step.outcome] ?? step.outcome}`;
+}
+
+function readInsightSize(): InsightSize | null {
+  try {
+    const value = JSON.parse(localStorage.getItem('persona.overlay.insight-size') ?? 'null') as Partial<InsightSize> | null;
+    return value && Number.isFinite(value.width) && Number.isFinite(value.height) && value.width! > 0 && value.height! > 0
+      ? { width: value.width!, height: value.height! }
+      : null;
+  } catch { return null; }
+}
 
 const initialAnswer: AnswerState = {
   status: 'idle',
@@ -75,7 +99,12 @@ export function Overlay() {
   const [meetingOpen, setMeetingOpen] = useState(false);
   const [meetingActive, setMeetingActive] = useState(false);
   const [insightCollapsed, setInsightCollapsed] = useState(false);
+  const [insightDebugOpen, setInsightDebugOpen] = useState(false);
   const [insightFontSize, setInsightFontSize] = useState(14);
+  const [insightSize, setInsightSize] = useState<InsightSize | null>(readInsightSize);
+  const insightSizeRef = useRef(insightSize);
+  const insightPanelRef = useRef<HTMLElement>(null);
+  const insightResizeRef = useRef<{ pointerId: number; startX: number; startY: number; startWidth: number; startHeight: number; left: number; top: number; scale: number } | null>(null);
   const [meetingIsAnalyzing, setMeetingIsAnalyzing] = useState(false);
   const [transcriptAnalysisRequestId, setTranscriptAnalysisRequestId] = useState(0);
   const [contextOpen, setContextOpen] = useState(false);
@@ -83,7 +112,7 @@ export function Overlay() {
   const agentSwitcherRef = useRef<HTMLDivElement>(null);
   const [profiles, setProfiles] = useState<AssistantProfile[]>([]);
   const [activeProfileId, setActiveProfileId] = useState(() => localStorage.getItem('persona.activeProfile') ?? 'general');
-  const { insight, suggestions, suggestionIndex, navigateSuggestions, onTranscript, onSessionActiveChange: onInsightSessionChange } = useLiveInsights({ profileId: activeProfileId, hasTypeSafeApiKey: settings.hasTypeSafeApiKey, hasAnalysisApiKey });
+  const { insight, suggestions, suggestionIndex, navigateSuggestions, onTranscript, onSessionActiveChange: onInsightSessionChange, diagnostics, clearDiagnostics } = useLiveInsights({ profileId: activeProfileId, hasTypeSafeApiKey: settings.hasTypeSafeApiKey, hasAnalysisApiKey, debugEnabled: insightDebugOpen });
   const onMeetingSessionChange = useCallback((active: boolean) => { setMeetingActive(active); onInsightSessionChange(active); }, [onInsightSessionChange]);
   const [selectedMemory, setSelectedMemory] = useState<MemoryContext[]>([]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -431,6 +460,96 @@ export function Overlay() {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
+  const setInsightSizeValue = (size: InsightSize) => {
+    insightSizeRef.current = size;
+    setInsightSize(size);
+  };
+
+  const persistInsightSize = (size: InsightSize) => {
+    try { localStorage.setItem('persona.overlay.insight-size', JSON.stringify({ width: size.width, height: size.height })); } catch { /* Keep resizing available if storage is unavailable. */ }
+  };
+
+  const startInsightResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const panel = insightPanelRef.current;
+    if (!panel) return;
+    const rect = panel.getBoundingClientRect();
+    const start = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startWidth: panel.offsetWidth,
+      startHeight: panel.offsetHeight,
+      left: rect.left,
+      top: rect.top,
+      scale: Math.max(settings.scale, 0.5),
+    };
+    insightResizeRef.current = start;
+    setInsightSizeValue({
+      width: start.startWidth,
+      height: start.startHeight,
+      left: rect.left,
+      top: rect.top,
+      dragOriginX: insightDrag.offset.x,
+      dragOriginY: insightDrag.offset.y,
+    });
+    window.persona.beginOverlayDrag();
+    document.body.dataset.dragging = 'true';
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const resizeInsight = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const start = insightResizeRef.current;
+    if (!start || start.pointerId !== event.pointerId) return;
+    const maxWidth = Math.max(200, (window.innerWidth - start.left - 16) / start.scale);
+    const maxHeight = Math.max(140, (window.innerHeight - start.top - 16) / start.scale);
+    const minWidth = Math.min(240, maxWidth);
+    const minHeight = Math.min(160, maxHeight);
+    setInsightSizeValue({
+      ...(insightSizeRef.current ?? { width: start.startWidth, height: start.startHeight }),
+      width: Math.min(maxWidth, Math.max(minWidth, start.startWidth + (event.clientX - start.startX) / start.scale)),
+      height: Math.min(maxHeight, Math.max(minHeight, start.startHeight + (event.clientY - start.startY) / start.scale)),
+    });
+  };
+
+  const stopInsightResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (insightResizeRef.current?.pointerId !== event.pointerId) return;
+    insightResizeRef.current = null;
+    delete document.body.dataset.dragging;
+    window.persona.endOverlayDrag();
+    if (insightSizeRef.current) persistInsightSize(insightSizeRef.current);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+
+  const resizeInsightByKeyboard = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+    event.preventDefault();
+    const panel = insightPanelRef.current;
+    if (!panel) return;
+    const rect = panel.getBoundingClientRect();
+    const scale = Math.max(settings.scale, 0.5);
+    const current = insightSizeRef.current;
+    const base: InsightSize = {
+      width: current?.width ?? panel.offsetWidth,
+      height: current?.height ?? panel.offsetHeight,
+      left: current?.left ?? rect.left,
+      top: current?.top ?? rect.top,
+      dragOriginX: current?.dragOriginX ?? insightDrag.offset.x,
+      dragOriginY: current?.dragOriginY ?? insightDrag.offset.y,
+    };
+    const maxWidth = Math.max(200, (window.innerWidth - base.left! - 16) / scale);
+    const maxHeight = Math.max(140, (window.innerHeight - base.top! - 16) / scale);
+    const amount = (event.shiftKey ? 24 : 8) / scale;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      base.width = Math.min(maxWidth, Math.max(Math.min(240, maxWidth), base.width + (event.key === 'ArrowRight' ? amount : -amount)));
+    } else {
+      base.height = Math.min(maxHeight, Math.max(Math.min(160, maxHeight), base.height + (event.key === 'ArrowDown' ? amount : -amount)));
+    }
+    setInsightSizeValue(base);
+    persistInsightSize(base);
+  };
+
   const resizeAnswerByKeyboard = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
     const amount = event.shiftKey ? 24 : 8;
     const panel = answerPanelRef.current;
@@ -492,16 +611,28 @@ export function Overlay() {
         </form>
       )}
 
-      {meetingActive && <aside className={`insight-panel glass-surface ${insightCollapsed ? 'is-collapsed' : ''}`} style={{ ['--drag-x' as string]: `${insightDrag.offset.x}px`, ['--drag-y' as string]: `${insightDrag.offset.y}px` }} data-interactive aria-label="Resposta sugerida">
+      {meetingActive && <aside ref={insightPanelRef} className={`insight-panel glass-surface ${insightCollapsed ? 'is-collapsed' : ''} ${insightSize ? 'is-resized' : ''}`} style={{ ['--drag-x' as string]: `${insightDrag.offset.x}px`, ['--drag-y' as string]: `${insightDrag.offset.y}px`, ...(insightSize ? { width: `${insightSize.width}px`, height: `${insightSize.height}px`, maxWidth: 'calc(100vw - 16px)', maxHeight: 'calc(100vh - 16px)' } : {}), ...(insightSize?.left !== undefined && insightSize.top !== undefined ? { left: `${insightSize.left}px`, top: `${insightSize.top}px`, right: 'auto', transform: `translate(${insightDrag.offset.x - (insightSize.dragOriginX ?? insightDrag.offset.x)}px, ${insightDrag.offset.y - (insightSize.dragOriginY ?? insightDrag.offset.y)}px) scale(var(--overlay-scale, 1))`, transformOrigin: 'top left' } : {}) }} data-interactive aria-label="Resposta sugerida">
         <header className="insight-header drag-grip" tabIndex={0} title="Arraste para mover. Use as setas para ajustar a posição." onPointerDown={insightDrag.startDrag} onKeyDown={(event) => { if (event.target !== event.currentTarget || !event.key.startsWith('Arrow')) return; event.preventDefault(); insightDrag.moveBy(event.key === 'ArrowLeft' ? -16 : event.key === 'ArrowRight' ? 16 : 0, event.key === 'ArrowUp' ? -16 : event.key === 'ArrowDown' ? 16 : 0); }}>
           <span className="insight-heading"><Sparkles size={15} aria-hidden="true" /> Resposta sugerida</span>
-          <span className="insight-header-actions"><span className={`insight-status-dot ${insight.status}`} aria-hidden="true" /><button className="icon-button" type="button" aria-label={insightCollapsed ? 'Expandir resposta sugerida' : 'Recolher resposta sugerida'} aria-expanded={!insightCollapsed} onClick={() => setInsightCollapsed((value) => !value)}>{insightCollapsed ? <Plus size={16} /> : <Minus size={16} />}</button></span>
+          <span className="insight-header-actions"><span className={`insight-status-dot ${insight.status}`} aria-hidden="true" /><button className={`icon-button ${insightDebugOpen ? 'is-active' : ''}`} type="button" aria-label={insightDebugOpen ? 'Fechar diagnóstico do insight' : 'Abrir diagnóstico do insight'} aria-pressed={insightDebugOpen} title="Diagnóstico local do insight" onClick={() => setInsightDebugOpen((value) => !value)}><Bug size={15} /></button><button className="icon-button" type="button" aria-label={insightCollapsed ? 'Expandir resposta sugerida' : 'Recolher resposta sugerida'} aria-expanded={!insightCollapsed} onClick={() => setInsightCollapsed((value) => !value)}>{insightCollapsed ? <Plus size={16} /> : <Minus size={16} />}</button></span>
         </header>
-        {!insightCollapsed && <div className="insight-body" aria-live="polite">
-          {insight.text ? <div className="insight-text" style={{ fontSize: `${insightFontSize}px` }}><AnswerContent text={insight.text} /></div> : <p className="insight-placeholder">{insight.status === 'missing-key' ? 'Insights aguardando configuração.' : insight.status === 'loading' ? 'Preparando sugestão…' : 'Aguardando uma pergunta ou dúvida clara.'}</p>}
-          {insight.status === 'loading' && insight.text && <span className="insight-meta">Analisando a fala recente…</span>}
+        {!insightCollapsed && <div className="insight-body" aria-live={insight.draft ? 'off' : 'polite'}>
+          {insight.text ? <div className={`insight-text ${insight.draft ? 'insight-draft' : ''}`} style={{ fontSize: `${insightFontSize}px` }}>{insight.draft ? insight.text : <AnswerContent text={insight.text} />}</div> : <p className="insight-placeholder">{insight.status === 'missing-key' ? 'Insights aguardando configuração.' : insight.status === 'loading' ? 'Preparando sugestão…' : 'Aguardando uma pergunta ou dúvida clara.'}</p>}
+          {insight.status === 'loading' && insight.text && <span className="insight-meta">{insight.draft ? 'Resposta em andamento…' : 'Analisando a fala recente…'}</span>}
           {insight.message && <p className="insight-message" role={insight.status === 'error' ? 'alert' : 'status'}>{insight.message}</p>}
           {insight.status === 'missing-key' && <button type="button" className="insight-configure" onClick={() => void window.persona.openSettings()}>Configurar TypeSafe</button>}
+          {insightDebugOpen && <section className="insight-debug" aria-label="Diagnóstico do insight">
+            <header><strong>Diagnóstico local</strong><button type="button" className="icon-button" aria-label="Limpar diagnóstico" title="Limpar diagnóstico" disabled={!diagnostics.length} onClick={clearDiagnostics}><Trash2 size={13} /></button></header>
+            {!diagnostics.length ? <p>Abra esta área antes de reproduzir o problema. As próximas etapas ficam apenas nesta sessão.</p> : <ol>
+              {diagnostics.map((entry) => <li key={entry.id}>
+                <div className="insight-debug-event"><time>{entry.at}</time><strong>{entry.title}</strong><span>{entry.detail}</span></div>
+                {entry.debug && <div className="insight-debug-meta">{[entry.debug.agent, entry.debug.provider, entry.debug.model].filter(Boolean).join(' • ')}{entry.debug.threshold !== undefined ? ` • limiar ${entry.debug.threshold}` : ''} • {entry.debug.durationMs} ms</div>}
+                {entry.debug?.steps.map((step, index) => <div className="insight-debug-step" key={`${entry.id}-${index}`}>
+                  <strong>{insightDebugStepLabel(step)}</strong>{step.probability !== undefined && <span> prob. {step.probability.toFixed(3)}{step.threshold !== undefined ? ` / limiar ${step.threshold}` : ''}</span>}{step.elapsedMs !== undefined && <span> • {step.elapsedMs} ms</span>}{step.detail && <p>{step.detail}</p>}
+                </div>)}
+              </li>)}
+            </ol>}
+          </section>}
         </div>}
         {!insightCollapsed && suggestions.length > 0 && <footer className="insight-controls" aria-label="Controles das respostas sugeridas">
           <div className="insight-pagination">
@@ -515,6 +646,7 @@ export function Overlay() {
             <button className="icon-button" type="button" aria-label="Aumentar fonte da resposta sugerida" title="Aumentar fonte" disabled={insightFontSize >= 24} onClick={() => setInsightFontSize((size) => Math.min(24, size + 1))}><Plus size={14} /></button>
           </div>
         </footer>}
+        {!insightCollapsed && <button className="insight-resize-handle" type="button" aria-label="Redimensionar resposta sugerida" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight" title="Arraste para aumentar ou reduzir a janela. Use as setas do teclado; Shift + seta ajusta mais." onPointerDown={startInsightResize} onPointerMove={resizeInsight} onPointerUp={stopInsightResize} onPointerCancel={stopInsightResize} onLostPointerCapture={stopInsightResize} onKeyDown={resizeInsightByKeyboard}><GripVertical size={15} aria-hidden="true" /></button>}
       </aside>}
 
       {(answerOpen || meetingOpen) && (

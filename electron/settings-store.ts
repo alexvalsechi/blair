@@ -1,7 +1,7 @@
 import { app, safeStorage } from 'electron';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { AlibabaReasoningEffort, ModelPolicy, PublicSettings, SaveSettingsInput, ShortcutAction } from './contracts.js';
+import type { AlibabaReasoningEffort, InsightResponseLength, ModelPolicy, PublicSettings, SaveSettingsInput, ShortcutAction } from './contracts.js';
 import { clampOpacity, normalizeAlibabaReasoningEfforts, normalizeModel, normalizeModelPolicy } from './validation.js';
 
 type StoredSettings = {
@@ -24,7 +24,10 @@ type StoredSettings = {
   modelPolicy: ModelPolicy;
   policyModels: Record<ModelPolicy, string>;
   alibabaPolicyModels: Record<ModelPolicy, string>;
+  insightModels: Record<'openai' | 'alibaba', string>;
+  insightResponseLength: InsightResponseLength;
   alibabaReasoningEfforts: Record<string, AlibabaReasoningEffort>;
+  insightAlibabaReasoningEfforts: Record<string, AlibabaReasoningEffort>;
 };
 
 export const defaultShortcuts: Record<ShortcutAction, string> = {
@@ -50,7 +53,10 @@ const defaults: StoredSettings = {
   modelPolicy: 'balanced',
   policyModels: { economy: 'gpt-5.5', balanced: 'gpt-5.5', quality: 'gpt-5.5' },
   alibabaPolicyModels: { economy: 'qwen-turbo', balanced: 'qwen-plus', quality: 'qwen-max' },
+  insightModels: { openai: 'gpt-5.5', alibaba: 'qwen-plus' },
+  insightResponseLength: 'medium',
   alibabaReasoningEfforts: {},
+  insightAlibabaReasoningEfforts: {},
 };
 
 const settingsPath = () => path.join(app.getPath('userData'), 'settings.json');
@@ -69,7 +75,13 @@ async function readStored(): Promise<StoredSettings> {
       captureSourceId: normalizeCaptureSourceId(parsed.captureSourceId ?? parsed.captureDisplayId ?? defaults.captureSourceId),
       policyModels: { ...defaults.policyModels, balanced: parsed.model ?? defaults.policyModels.balanced, ...(parsed.policyModels ?? {}) },
       alibabaPolicyModels: { ...defaults.alibabaPolicyModels, ...(parsed.alibabaPolicyModels ?? {}) },
+      insightModels: {
+        openai: parsed.insightModels?.openai ?? parsed.policyModels?.balanced ?? parsed.model ?? defaults.insightModels.openai,
+        alibaba: parsed.insightModels?.alibaba ?? parsed.alibabaPolicyModels?.balanced ?? defaults.insightModels.alibaba,
+      },
       alibabaReasoningEfforts: normalizeAlibabaReasoningEfforts(parsed.alibabaReasoningEfforts),
+      insightAlibabaReasoningEfforts: normalizeAlibabaReasoningEfforts(parsed.insightAlibabaReasoningEfforts ?? parsed.alibabaReasoningEfforts),
+      insightResponseLength: normalizeInsightResponseLength(parsed.insightResponseLength),
       modelPolicy: normalizeModelPolicy(parsed.modelPolicy ?? defaults.modelPolicy),
     };
   } catch {
@@ -103,7 +115,10 @@ export async function getPublicSettings(): Promise<PublicSettings> {
     modelPolicy: stored.modelPolicy,
     policyModels: stored.policyModels,
     alibabaPolicyModels: stored.alibabaPolicyModels,
+    insightModels: stored.insightModels,
+    insightResponseLength: stored.insightResponseLength,
     alibabaReasoningEfforts: stored.alibabaReasoningEfforts,
+    insightAlibabaReasoningEfforts: stored.insightAlibabaReasoningEfforts,
   };
 }
 
@@ -133,7 +148,13 @@ export async function saveSettings(input: SaveSettingsInput): Promise<PublicSett
       balanced: normalizeModel(input.alibabaPolicyModels?.balanced ?? stored.alibabaPolicyModels.balanced),
       quality: normalizeModel(input.alibabaPolicyModels?.quality ?? stored.alibabaPolicyModels.quality),
     },
+    insightModels: {
+      openai: normalizeModel(input.insightModels?.openai ?? stored.insightModels.openai),
+      alibaba: normalizeModel(input.insightModels?.alibaba ?? stored.insightModels.alibaba),
+    },
     alibabaReasoningEfforts: normalizeAlibabaReasoningEfforts(input.alibabaReasoningEfforts ?? stored.alibabaReasoningEfforts),
+    insightAlibabaReasoningEfforts: normalizeAlibabaReasoningEfforts(input.insightAlibabaReasoningEfforts ?? stored.insightAlibabaReasoningEfforts),
+    insightResponseLength: normalizeInsightResponseLength(input.insightResponseLength ?? stored.insightResponseLength),
   };
 
   if (input.apiKey?.trim()) {
@@ -160,6 +181,10 @@ export async function saveSettings(input: SaveSettingsInput): Promise<PublicSett
 
   await writeStored(next);
   return getPublicSettings();
+}
+
+function normalizeInsightResponseLength(value: unknown): InsightResponseLength {
+  return value === 'short' || value === 'complete' ? value : 'medium';
 }
 
 function normalizeCaptureSourceId(value: string): string {

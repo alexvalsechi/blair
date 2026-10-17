@@ -111,6 +111,8 @@ export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceH
   const mutedChannelsRef = useRef<ChannelValues<boolean>>({ microphone: false, computer: false });
   const transcriptionChainRef = useRef<Promise<void>>(Promise.resolve());
   const transcriptRef = useRef<TranscriptSegment[]>([]);
+  const transcriptViewportRef = useRef<HTMLDivElement>(null);
+  const followTranscriptRef = useRef(true);
   const finalizedIdsRef = useRef(new Set<string>());
   const transcriptCallbackRef = useRef(onTranscriptUpdate);
   transcriptCallbackRef.current = onTranscriptUpdate;
@@ -126,6 +128,12 @@ export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceH
   const alibabaMuteRef = useRef<GainNode | null>(null);
 
   const canTranscribe = transcriptionProvider === 'alibaba' ? hasAlibabaApiKey && hasAlibabaWorkspaceHost : hasApiKey;
+
+  useEffect(() => {
+    const viewport = transcriptViewportRef.current;
+    if (!viewport || !isVisible || !followTranscriptRef.current) return;
+    viewport.scrollTop = viewport.scrollHeight;
+  }, [segments, isVisible]);
 
   useEffect(() => window.persona.onAlibabaTranscriptionEvent((event: AlibabaTranscriptionEvent) => {
     if (event.type === 'usage') { setAlibabaUsage({ inputTokens: event.inputTokens, outputTokens: event.outputTokens }); return; }
@@ -450,7 +458,10 @@ export function MeetingPanel({ hasApiKey, hasAlibabaApiKey, hasAlibabaWorkspaceH
           {state === 'recording' && <section className="meeting-meters" aria-label="Medidores e controles de áudio">
             <AudioMeters analysers={channelAnalysersRef} muted={mutedChannels} onToggleMute={toggleChannelMuted} />
           </section>}
-          <div className="transcript" aria-label="Transcrição da reunião">
+          <div ref={transcriptViewportRef} className="transcript" aria-label="Transcrição da reunião" onScroll={(event) => {
+            const viewport = event.currentTarget;
+            followTranscriptRef.current = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 64;
+          }}>
             {isVisible && (segments.length ? segments.map((segment) => <div className="transcript-entry" key={segment.id}><p><time>{new Date(segment.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</time>{segment.text}</p>{segment.id === lastAnalyzedSegmentId && <div className="transcript-analysis-marker" role="note">Última análise até aqui</div>}</div>) : <p className="transcript-empty">{transcriptionProvider === 'alibaba' ? 'A transcrição ao vivo do Qwen aparecerá aqui enquanto você fala. Você pode abrir a aba Respostas sem encerrar a sessão.' : 'A transcrição aparecerá aqui em blocos de cerca de 12 segundos. Você pode abrir a aba Respostas sem encerrar a sessão.'}</p>)}
           </div>
           {isAnalyzing && analysisProgress && <p className="meeting-analysis-progress" role="status">{analysisProgress.stage}{analysisProgress.total > 1 ? ` · ${Math.min(analysisProgress.completed + 1, analysisProgress.total)} de ${analysisProgress.total}` : ''}</p>}

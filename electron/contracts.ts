@@ -17,10 +17,14 @@ export type PublicSettings = {
   modelPolicy: ModelPolicy;
   policyModels: Record<ModelPolicy, string>;
   alibabaPolicyModels: Record<ModelPolicy, string>;
+  insightModels: Record<'openai' | 'alibaba', string>;
+  insightResponseLength: InsightResponseLength;
   alibabaReasoningEfforts: Record<string, AlibabaReasoningEffort>;
+  insightAlibabaReasoningEfforts: Record<string, AlibabaReasoningEffort>;
 };
 
 export type AlibabaReasoningEffort = 'default' | 'none' | 'low' | 'medium' | 'xhigh';
+export type InsightResponseLength = 'short' | 'medium' | 'complete';
 
 export type SaveSettingsInput = {
   apiKey?: string;
@@ -40,7 +44,10 @@ export type SaveSettingsInput = {
   modelPolicy?: ModelPolicy;
   policyModels?: Partial<Record<ModelPolicy, string>>;
   alibabaPolicyModels?: Partial<Record<ModelPolicy, string>>;
+  insightModels?: Partial<Record<'openai' | 'alibaba', string>>;
+  insightResponseLength?: InsightResponseLength;
   alibabaReasoningEfforts?: Record<string, AlibabaReasoningEffort>;
+  insightAlibabaReasoningEfforts?: Record<string, AlibabaReasoningEffort>;
 };
 
 export type ModelPolicy = 'economy' | 'balanced' | 'quality';
@@ -179,13 +186,43 @@ export type InsightTranscriptUpdate = {
 };
 
 export type InsightInput = InsightTranscriptUpdate & {
+  requestId: string;
   profileId: string;
   visibleSuggestion: string;
+  answered: Array<{ question: string; answer: string }>;
+};
+
+export type InsightProgress =
+  | { requestId: string; stage: 'generation' }
+  | { requestId: string; stage: 'delta'; text: string };
+
+export type InsightDebugStep = {
+  stage: 'context' | 'classification' | 'question' | 'fallback' | 'generation' | 'novelty' | 'result' | 'error';
+  outcome: string;
+  detail?: string;
+  elapsedMs?: number;
+  probability?: number;
+  threshold?: number;
+};
+
+export type InsightDebugInfo = {
+  segmentId: string;
+  isFinal: boolean;
+  finalizedCount: number;
+  liveLength: number;
+  threshold?: number;
+  agent?: string;
+  provider?: 'openai' | 'alibaba';
+  model?: string;
+  startedAt: string;
+  durationMs: number;
+  steps: InsightDebugStep[];
 };
 
 export type InsightResult =
-  | { status: 'suggestion'; text: string }
-  | { status: 'skipped' };
+  | { status: 'suggestion'; text: string; debug: InsightDebugInfo }
+  | { status: 'skipped'; debug: InsightDebugInfo }
+  | { status: 'error'; message: string; debug: InsightDebugInfo };
 
 export type ShortcutAction =
   | 'ask'

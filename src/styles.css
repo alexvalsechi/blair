@@ -169,8 +169,11 @@ kbd {
   top: 18px;
   right: 24px;
   width: min(360px, calc(100vw - 32px));
+  max-width: min(760px, calc(100vw - 16px));
   max-height: min(340px, calc(100vh - 48px));
   overflow: hidden;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   transform: translate(var(--drag-x, 0px), var(--drag-y, 0px)) scale(var(--overlay-scale, 1));
   transform-origin: top right;
   border-radius: 14px;
@@ -186,9 +189,12 @@ kbd {
 .insight-status-dot.loading { background: #d6a861; }
 .insight-status-dot.success { background: var(--teal); }
 .insight-status-dot.error, .insight-status-dot.missing-key { background: var(--danger); }
-.insight-body { max-height: 240px; overflow: auto; padding: 12px 15px 14px; user-select: text; }
+.insight-body { max-height: 240px; min-height: 0; overflow: auto; padding: 12px 15px 14px; user-select: text; }
+.insight-panel.is-resized .insight-body { max-height: none; }
+.insight-panel.is-resized { min-width: min(220px, calc(100vw - 32px)); min-height: min(140px, calc(100vh - 32px)); }
 .insight-text, .insight-placeholder, .insight-message { margin: 0; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
 .insight-text { color: var(--ink); }
+.insight-draft { white-space: pre-wrap; }
 .insight-text .answer-markdown p { max-width: none; margin: 0 0 8px; white-space: pre-wrap; }
 .insight-text .answer-markdown pre { margin: 8px 0; padding: 9px 10px; font-size: .88em; }
 .insight-text .answer-markdown pre code { font-size: 1em; }
@@ -197,12 +203,31 @@ kbd {
 .insight-meta { display: block; margin-top: 8px; color: #d6bb8c; font-size: 10px; }
 .insight-configure { margin-top: 10px; min-height: 30px; padding: 0 10px; border: 1px solid rgba(56,199,197,.48); border-radius: 7px; background: rgba(56,199,197,.1); color: var(--ink); font-size: 11px; font-weight: 700; cursor: pointer; }
 .insight-configure:hover { background: rgba(56,199,197,.2); }
-.insight-controls { min-height: 40px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 10px 0 12px; border-top: 1px solid rgba(255,255,255,.1); color: #c8d1ce; }
+.insight-controls { min-height: 40px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 36px 0 12px; border-top: 1px solid rgba(255,255,255,.1); color: #c8d1ce; }
 .insight-pagination, .insight-font-controls { display: inline-flex; align-items: center; gap: 4px; }
 .insight-pagination { font-size: 10px; font-variant-numeric: tabular-nums; }
 .insight-controls .icon-button { width: 26px; height: 26px; color: #dce5e2; }
 .insight-controls .icon-button:disabled { opacity: .35; cursor: not-allowed; }
 .insight-font-controls > span { min-width: 12px; color: #dce5e2; font-size: 11px; font-weight: 700; text-align: center; }
+.insight-debug { margin-top: 12px; border: 1px solid rgba(56,199,197,.26); border-radius: 8px; background: rgba(4,10,12,.38); color: #c8d1ce; font-size: 10px; }
+.insight-debug > header { display: flex; align-items: center; justify-content: space-between; min-height: 32px; padding: 0 7px 0 10px; border-bottom: 1px solid rgba(255,255,255,.08); color: var(--ink); }
+.insight-debug > header .icon-button { width: 24px; height: 24px; }
+.insight-debug > p { margin: 0; padding: 9px 10px; line-height: 1.4; }
+.insight-debug > ol { display: flex; flex-direction: column; gap: 8px; max-height: 190px; overflow: auto; margin: 0; padding: 9px 10px 10px 27px; }
+.insight-debug > ol > li { padding-left: 2px; }
+.insight-debug-event { display: grid; grid-template-columns: auto 1fr; gap: 2px 7px; line-height: 1.4; }
+.insight-debug-event time { color: var(--teal); font-variant-numeric: tabular-nums; }
+.insight-debug-event strong { color: #edf3f1; }
+.insight-debug-event span { grid-column: 1 / -1; overflow-wrap: anywhere; }
+.insight-debug-meta { margin-top: 3px; color: #9eb0ac; font-size: 9px; overflow-wrap: anywhere; }
+.insight-debug-step { margin: 4px 0 0 5px; color: #afc0bc; line-height: 1.4; overflow-wrap: anywhere; }
+.insight-debug-step strong { color: #dce5e2; }
+.insight-debug-step p { margin: 2px 0 0; color: #9eb0ac; }
+.insight-resize-handle { position: absolute; z-index: 2; right: 2px; bottom: 2px; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 0 0 12px 0; background: transparent; color: var(--muted); cursor: nwse-resize; touch-action: none; }
+.insight-resize-handle svg { transform: rotate(-45deg); }
+.insight-resize-handle:hover { color: var(--teal); background: rgba(56,199,197,.12); }
+.insight-resize-handle:active { color: #fff; }
+.insight-resize-handle:focus-visible { outline: 2px solid var(--teal); outline-offset: -3px; }
 
 @media (min-width: 1300px) and (max-width: 1499px) {
   .insight-panel { width: 260px; }
@@ -211,8 +236,9 @@ kbd {
 @media (max-width: 1299px) {
   .overlay-stage:has(.insight-panel) .insight-panel { top: 150px; }
   .overlay-stage:has(.insight-panel) .answer-panel { top: 300px; }
+  .overlay-stage:has(.insight-panel) .answer-panel.has-meeting-tabs { top: clamp(180px, 39vh, 300px); height: calc(100vh - clamp(180px, 39vh, 300px) - 48px); min-height: min(360px, calc(100vh - clamp(180px, 39vh, 300px) - 32px)); }
 }
-.answer-panel.has-meeting-tabs { grid-template-rows: auto auto minmax(0, 1fr) auto; }
+.answer-panel.has-meeting-tabs { top: 24px; height: min(680px, calc(100vh - 48px)); min-height: min(480px, calc(100vh - 32px)); grid-template-rows: auto auto minmax(0, 1fr) auto; }
 
 .answer-header,
 .answer-footer {
@@ -282,12 +308,18 @@ kbd {
 .answer-markdown table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; margin: 0 0 13px; }
 .answer-markdown th, .answer-markdown td { padding: 6px 9px; border: 1px solid rgba(255,255,255,.16); text-align: left; }
 .answer-history-divider { height: 1px; margin: 19px 0; border: 0; background: rgba(255,255,255,.15); }
-.meeting-answer-copy { padding-top: 17px; }
-.meeting-session { display: flex; min-height: 100%; flex-direction: column; }
+.meeting-answer-copy { display: flex; min-height: 0; overflow: hidden; padding: 10px 4px 8px 0; }
+.meeting-session { display: flex; width: 100%; height: 100%; min-height: 0; flex-direction: column; overflow: hidden; }
 .meeting-session .meeting-setup { padding-top: 0; }
+.meeting-session .meeting-status,
+.meeting-session .meeting-usage,
+.meeting-session .meeting-connection,
+.meeting-session .meeting-meters,
+.meeting-session .meeting-analysis-progress,
+.meeting-session > .meeting-error { flex: 0 0 auto; }
 .meeting-session .meeting-status { padding-top: 0; }
-.meeting-session .transcript { flex: 1; height: min(410px, 48vh); max-height: min(410px, 48vh); overflow-y: auto; }
-.meeting-session .meeting-controls { margin-top: 10px; }
+.meeting-session .transcript { flex: 1 1 0; min-height: 0; height: auto; max-height: none; overflow-y: auto; overscroll-behavior: contain; }
+.meeting-session .meeting-controls { flex: 0 0 auto; margin-top: auto; padding-top: 8px; }
 .meeting-analysis-progress { margin: 5px 0 0; color: var(--teal); font-size: 11px; }
 .answer-error .answer-copy { color: #ffd0c9; }
 

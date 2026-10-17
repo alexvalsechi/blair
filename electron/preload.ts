@@ -7,7 +7,7 @@ import type {
   PublicSettings,
   SaveSettingsInput,
   ShortcutAction,
-  StreamEvent, HistoryEntry, Diagnostics, MeetingSummaryInput, TranscribeInput, AlibabaTranscriptionEvent, AssistantProfile, SaveAssistantProfileInput, Attachment, MeetingAnalysisProgress, InsightInput, InsightResult,
+  StreamEvent, HistoryEntry, Diagnostics, MeetingSummaryInput, TranscribeInput, AlibabaTranscriptionEvent, AssistantProfile, SaveAssistantProfileInput, Attachment, MeetingAnalysisProgress, InsightInput, InsightProgress, InsightResult,
 } from './contracts.js';
 
 contextBridge.exposeInMainWorld('persona', {
@@ -63,6 +63,11 @@ contextBridge.exposeInMainWorld('persona', {
   summarizeMeeting: (input: MeetingSummaryInput): Promise<AskResult> => ipcRenderer.invoke('meeting:summarize', input),
   cancelMeetingAnalysis: (): void => ipcRenderer.send('meeting:cancel'),
   evaluateInsight: (input: InsightInput): Promise<InsightResult> => ipcRenderer.invoke('insight:evaluate', input),
+  onInsightProgress: (callback: (progress: InsightProgress) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, value: InsightProgress) => callback(value);
+    ipcRenderer.on('insight:progress', listener);
+    return () => ipcRenderer.removeListener('insight:progress', listener);
+  },
   cancelInsight: (): void => ipcRenderer.send('insight:cancel'),
   onMeetingAnalysisProgress: (callback: (progress: MeetingAnalysisProgress) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, value: MeetingAnalysisProgress) => callback(value);
