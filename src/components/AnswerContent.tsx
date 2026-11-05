@@ -134,7 +134,7 @@ function D2Diagram({ source }: { source: string }) {
         const rendered = await withRenderer(async (renderer) => {
           const compiled = await renderer.compile({
             fs: { index: renderSource },
-            options: { sketch: true, center: true, pad: 12 },
+            options: { sketch: true, center: true, pad: 12, themeID: 200, darkThemeID: 200 },
           });
           if (!active) return null;
           return renderer.render(compiled.diagram, {
@@ -142,6 +142,8 @@ function D2Diagram({ source }: { source: string }) {
             sketch: true,
             center: true,
             pad: 12,
+            themeID: 200,
+            darkThemeID: 200,
             noXMLTag: true,
           });
         });

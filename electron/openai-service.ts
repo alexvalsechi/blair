@@ -15,6 +15,7 @@ const SYSTEM_INSTRUCTIONS = [
   'Mantenha o diagrama compacto, com poucos componentes e labels curtos nas setas. Use -> para conexões e chaves {} para agrupar componentes ou aplicar estilos.',
   'Todo bloco d2 deve começar com o comentário # render-command: d2 --sketch input.d2 output.svg e definir style.font-size: 24 no escopo global ou nos nós principais.',
   'Em propriedades de cor do D2, coloque valores hexadecimais entre aspas, por exemplo: style.stroke: "#e74c3c" e style.fill: "#e74c3c".',
+  'Os diagramas são renderizados com tema escuro. Prefira as cores padrão do tema; se definir cores manualmente, mantenha contraste alto entre o preenchimento e o texto e nunca use texto preto sobre fundo escuro.',
   'Não acrescente diagramas quando não forem pedidos nem ajudarem de forma clara; prefira uma explicação textual se o desenho ficar grande ou confuso.',
 ].join(' ');
 

@@ -12,7 +12,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import type { AskInput, Attachment, InsightDebugInfo, InsightInput, InsightProgress, InsightResult, InsightDebugStep, MeetingAnalysisProgress, MeetingSummaryInput, SaveAssistantProfileInput, SaveSettingsInput, ShortcutAction, TokenUsage, TranscribeInput, AlibabaTranscriptionEvent } from './contracts.js';
+import { MAX_AGENT_DOCUMENTS, type AskInput, type Attachment, type InsightDebugInfo, type InsightInput, type InsightProgress, type InsightResult, type InsightDebugStep, type MeetingAnalysisProgress, type MeetingSummaryInput, type SaveAssistantProfileInput, type SaveSettingsInput, type ShortcutAction, type TokenUsage, type TranscribeInput, type AlibabaTranscriptionEvent } from './contracts.js';
 import { askAlibaba, askOpenAI, listAlibabaAvailableModels, listAvailableModels, listAvailableTranscriptionModels, streamAlibaba, streamOpenAI, transcribeOpenAI } from './openai-service.js';
 import { retryAlibabaTranscription, sendAlibabaAudio, startAlibabaTranscription, stopAlibabaTranscription } from './alibaba-asr-service.js';
 import { appendHistory, clearHistory, deleteHistoryEntry, listHistory, searchHistory } from './history-store.js';
@@ -814,7 +814,7 @@ th, td { padding: 5pt 7pt; border: 1px solid #b7bec6; text-align: left; vertical
 th { background: #e9edf1; }
 a { color: #145e9b; }
 .answer-history-divider { height: 0; margin: 18pt 0; border: 0; border-top: 1px solid #c7cdd3; }
-.d2-diagram-card { width: 100%; margin: 12pt 0 16pt; padding: 8pt; overflow: hidden; border: 1px solid #d3d7dc; border-radius: 7pt; background: #fff; break-inside: avoid; }
+.d2-diagram-card { width: 100%; margin: 12pt 0 16pt; padding: 8pt; overflow: hidden; border: 1px solid #42484f; border-radius: 7pt; background: #17191d; break-inside: avoid; }
 .d2-diagram-image { display: block; width: 100%; max-height: 240mm; }
 .d2-diagram-image svg { display: block; width: 100%; height: auto; max-height: 240mm; }
 .d2-diagram-image img { display: block; max-width: 100%; height: auto; }
@@ -860,9 +860,10 @@ img { max-width: 100%; height: auto; }
     const parent = settingsWindow ?? overlayWindow;
     const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options);
     if (result.canceled) return [];
+    if (result.filePaths.length > MAX_AGENT_DOCUMENTS) throw new Error(`Selecione no máximo ${MAX_AGENT_DOCUMENTS} documentos por vez.`);
     const selected: Attachment[] = [];
     let total = 0;
-    for (const filePath of result.filePaths.slice(0, 5)) {
+    for (const filePath of result.filePaths) {
       const data = await readFile(filePath);
       total += data.byteLength;
       if (data.byteLength > 10_000_000 || total > 20_000_000) throw new Error('Cada documento pode ter até 10 MB e o total até 20 MB.');

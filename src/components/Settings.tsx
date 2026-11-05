@@ -1,7 +1,7 @@
 import { Activity, Bot, Check, ChevronRight, Eye, EyeOff, Keyboard, LockKeyhole, MessageSquareText, Mic, Monitor, Paperclip, Pencil, Plus, Save, Settings2, ShieldCheck, Sparkles, Trash2, X } from 'lucide-react';
 import { FormEvent, KeyboardEvent as ReactKeyboardEvent, useEffect, useMemo, useState } from 'react';
 import type { AlibabaReasoningEffort, AssistantProfile, Attachment, CaptureSource, InsightResponseLength, ModelPolicy, SaveAssistantProfileInput } from '../../electron/contracts';
-import { MAX_INSTRUCTIONS_LENGTH } from '../../electron/contracts';
+import { MAX_AGENT_DOCUMENTS, MAX_INSTRUCTIONS_LENGTH } from '../../electron/contracts';
 import { errorMessage } from '../lib/errors';
 import { alibabaTranscriptionModelPrice, analysisModelPrice, transcriptionModelPrice } from '../lib/model-pricing';
 import { filterCurrentAnalysisModels, supportsAlibabaReasoning } from '../../electron/validation';
@@ -247,8 +247,8 @@ export function Settings() {
       setDraft((current) => {
         const existing = current.knowledgeFiles ?? [];
         const additions = selected.filter((file) => !existing.some((item) => item.name === file.name));
-        if (existing.length + additions.length > 5) {
-          setNotice({ tone: 'error', text: 'Cada agente pode ter até 5 documentos.' });
+        if (existing.length + additions.length > MAX_AGENT_DOCUMENTS) {
+          setNotice({ tone: 'error', text: `Cada agente pode ter até ${MAX_AGENT_DOCUMENTS} documentos.` });
           return current;
         }
         return { ...current, knowledgeFiles: [...existing, ...additions] };
@@ -425,8 +425,8 @@ export function Settings() {
                     <label className="settings-label" htmlFor="agent-instructions">Instruções<textarea className="settings-textarea" id="agent-instructions" value={draft.instructions} maxLength={MAX_INSTRUCTIONS_LENGTH} onChange={(event) => setDraft((current) => ({ ...current, instructions: event.target.value }))} placeholder="O que este agente deve priorizar? Como deve estruturar a resposta?" required minLength={10} /><small className="field-help">{draft.instructions.length.toLocaleString('pt-BR')} / {MAX_INSTRUCTIONS_LENGTH.toLocaleString('pt-BR')} caracteres</small></label>
                     <label className="settings-label" htmlFor="agent-model-policy">Modelo preferido<select id="agent-model-policy" className="settings-select" value={draft.modelPolicy} onChange={(event) => setDraft((current) => ({ ...current, modelPolicy: event.target.value as SaveAssistantProfileInput['modelPolicy'] }))}><option value="default">Padrão da Persona</option><option value="economy">Economia</option><option value="balanced">Equilibrado</option><option value="quality">Qualidade</option></select></label>
                     <section className="agent-documents" aria-label="Documentos de referência">
-                      <div className="agent-documents-heading"><span><strong>Documentos de contexto</strong><small>Com Alibaba em Singapura, Pequim ou Hong Kong, o texto vai ao serviço de embeddings na primeira indexação e o índice fica neste computador; depois, cada pergunta envia só os trechos relevantes. Nas outras regiões, a busca é textual local. Com OpenAI, o documento segue junto ao pedido.</small></span><button className="settings-secondary" type="button" onClick={() => void addAgentDocuments()} disabled={(draft.knowledgeFiles?.length ?? 0) >= 5}><Paperclip size={14} />Anexar</button></div>
-                      {draft.knowledgeFiles?.length ? <ul>{draft.knowledgeFiles.map((document) => <li key={document.id}><span><strong>{document.name}</strong><small>{(document.size / 1_000_000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} MB</small></span><button type="button" aria-label={`Remover ${document.name}`} onClick={() => removeAgentDocument(document)}><X size={14} /></button></li>)}</ul> : <p>Nenhum documento anexado. Limite de 5 arquivos, 10 MB por arquivo.</p>}
+                      <div className="agent-documents-heading"><span><strong>Documentos de contexto</strong><small>Até {MAX_AGENT_DOCUMENTS} arquivos; cada um pode ter até 10 MB e o total pode somar até 20 MB. Com Alibaba em Singapura, Pequim ou Hong Kong, o texto vai ao serviço de embeddings na primeira indexação e o índice fica neste computador; depois, cada pergunta envia só os trechos relevantes. Nas outras regiões, a busca é textual local. Com OpenAI, o documento segue junto ao pedido.</small></span><button className="settings-secondary" type="button" onClick={() => void addAgentDocuments()} disabled={(draft.knowledgeFiles?.length ?? 0) >= MAX_AGENT_DOCUMENTS}><Paperclip size={14} />Anexar</button></div>
+                      {draft.knowledgeFiles?.length ? <ul>{draft.knowledgeFiles.map((document) => <li key={document.id}><span><strong>{document.name}</strong><small>{(document.size / 1_000_000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} MB</small></span><button type="button" aria-label={`Remover ${document.name}`} onClick={() => removeAgentDocument(document)}><X size={14} /></button></li>)}</ul> : <p>Nenhum documento anexado. Limite de {MAX_AGENT_DOCUMENTS} arquivos, 10 MB por arquivo e 20 MB no total.</p>}
                     </section>
                     <button className="settings-primary" type="submit" disabled={busy}><Save size={15} />{busy ? 'Salvando…' : 'Salvar agente'}</button>
                   </form>
