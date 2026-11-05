@@ -39,6 +39,7 @@ export function useDragPosition(initial: Offset, storageKey?: string) {
     const movement = clampMovement(target?.getBoundingClientRect() ?? null, deltaX, deltaY);
     setOffset((current) => ({ x: current.x + movement.x, y: current.y + movement.y }));
   }, []);
+  const reset = useCallback(() => setOffset(initial), [initial.x, initial.y]);
   const startDrag = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     if (event.button !== 0 || (event.target instanceof Element && event.target.closest(NON_DRAG_SELECTOR))) return;
     event.preventDefault();
@@ -75,5 +76,5 @@ export function useDragPosition(initial: Offset, storageKey?: string) {
     document.addEventListener('pointerup', stop);
     document.addEventListener('pointercancel', stop);
   }, [offset]);
-  return { offset, startDrag, moveBy };
+  return { offset, startDrag, moveBy, reset };
 }

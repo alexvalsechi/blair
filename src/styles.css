@@ -46,9 +46,6 @@ body[data-view='overlay'] { background: transparent; }
   user-select: none;
 }
 
-.overlay-stage.layout-upper-right .answer-panel { margin-left: auto; margin-right: 5vw; }
-.overlay-stage.layout-lower-center .answer-panel { margin-top: 20vh; }
-
 .glass-surface {
   background: linear-gradient(135deg, rgba(44, 51, 55, 0.93), rgba(18, 22, 25, 0.9));
   border: 1px solid var(--line-strong);
@@ -147,14 +144,14 @@ kbd {
 .answer-panel {
   position: absolute;
   z-index: 1;
-  top: clamp(122px, 15vh, 170px);
+  top: 50%;
   left: 50%;
   width: min(680px, calc(100vw - 56px));
   height: 280px;
   min-width: 120px;
   min-height: 80px;
   overflow: hidden;
-  transform: translate(calc(-50% + var(--drag-x, 0px)), var(--drag-y, 0px)) scale(var(--overlay-scale, 1));
+  transform: translate(calc(-50% + var(--drag-x, 0px)), calc(-50% + var(--drag-y, 0px))) scale(var(--overlay-scale, 1));
   padding: 0 26px;
   border-radius: 16px;
   container-type: inline-size;
@@ -235,10 +232,8 @@ kbd {
 
 @media (max-width: 1299px) {
   .overlay-stage:has(.insight-panel) .insight-panel { top: 150px; }
-  .overlay-stage:has(.insight-panel) .answer-panel { top: 300px; }
-  .overlay-stage:has(.insight-panel) .answer-panel.has-meeting-tabs { top: clamp(180px, 39vh, 300px); height: calc(100vh - clamp(180px, 39vh, 300px) - 48px); min-height: min(360px, calc(100vh - clamp(180px, 39vh, 300px) - 32px)); }
 }
-.answer-panel.has-meeting-tabs { top: 24px; height: min(680px, calc(100vh - 48px)); min-height: min(480px, calc(100vh - 32px)); grid-template-rows: auto auto minmax(0, 1fr) auto; }
+.answer-panel.has-meeting-tabs { height: min(680px, calc(100vh - 48px)); min-height: min(480px, calc(100vh - 32px)); grid-template-rows: auto auto minmax(0, 1fr) auto; }
 
 .answer-header,
 .answer-footer {
@@ -247,8 +242,7 @@ kbd {
   justify-content: space-between;
 }
 
-.answer-header { min-height: 40px; border-bottom: 1px solid rgba(255, 255, 255, 0.13); cursor: grab; touch-action: none; }
-.answer-header:active { cursor: grabbing; }
+.answer-header { min-height: 40px; border-bottom: 1px solid rgba(255, 255, 255, 0.13); touch-action: none; }
 
 .answer-title { display: inline-flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 700; }
 .answer-title svg { color: var(--teal); }
@@ -464,6 +458,7 @@ kbd {
 .dock-icon:hover { color: var(--teal); }
 .drag-grip { cursor: grab; touch-action: none; }
 .drag-grip:active { cursor: grabbing; }
+.answer-header, .answer-header:active { cursor: default; }
 .dock-drag-handle { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 34px; border-right: 1px solid rgba(255,255,255,.18); color: var(--muted); }
 .dock-drag-handle svg { width: 15px; height: 15px; }
 

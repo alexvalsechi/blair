@@ -118,9 +118,16 @@ export function Overlay() {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const promptDrag = useDragPosition({ x: 0, y: 0 }, 'persona.overlay.prompt-position');
-  const answerDrag = useDragPosition({ x: 0, y: 0 }, 'persona.overlay.answer-position');
+  const answerDrag = useDragPosition({ x: 0, y: 0 });
   const insightDrag = useDragPosition({ x: 0, y: 0 }, 'persona.overlay.insight-position');
   const dockDrag = useDragPosition({ x: 0, y: 0 }, 'persona.overlay.dock-position');
+  const openAnswerPanel = useCallback(() => {
+    if (!answerOpen) {
+      answerDrag.reset();
+      setAnswerSize(null);
+    }
+    setAnswerOpen(true);
+  }, [answerDrag.reset, answerOpen]);
 
   const exportAnswerPdf = async () => {
     const answerElement = answerCopyRef.current;
@@ -297,9 +304,9 @@ export function Overlay() {
 
   const openMeeting = useCallback(() => {
     setMeetingOpen(true);
-    setAnswerOpen(true);
+    openAnswerPanel();
     setResponseTab('transcript');
-  }, []);
+  }, [openAnswerPanel]);
 
   const submit = useCallback(
     async () => {
@@ -324,7 +331,7 @@ export function Overlay() {
       submittedDraftRef.current = { prompt, imageDataUrl, attachments, selectedMemory };
       setPromptError('');
       setTokenUsage(null);
-      setAnswerOpen(true);
+      openAnswerPanel();
       setResponseTab('answers');
       streamTextRef.current = '';
       followAnswerRef.current = true;
@@ -353,7 +360,7 @@ export function Overlay() {
         setAnswer({ status: 'error', text: errorMessage(error) });
       }
     },
-    [activeProfileId, answer, attachments, hasAnalysisApiKey, meetingIsAnalyzing, openPrompt, pendingCapture, prompt, selectedMemory, settings.analysisProvider],
+    [activeProfileId, answer, attachments, hasAnalysisApiKey, meetingIsAnalyzing, openAnswerPanel, openPrompt, pendingCapture, prompt, selectedMemory, settings.analysisProvider],
   );
 
   const addAttachments = async () => {
@@ -362,7 +369,7 @@ export function Overlay() {
       setAttachments((current) => [...current, ...selected].slice(0, 5));
       if (selected.length) openPrompt();
     } catch (error) {
-      setAnswerOpen(true); setAnswer({ status: 'error', text: errorMessage(error) });
+      openAnswerPanel(); setAnswer({ status: 'error', text: errorMessage(error) });
     }
   };
 
@@ -698,7 +705,7 @@ export function Overlay() {
                 if (answer.status === 'success' && answer.text.trim()) setAnswerHistory((current) => [...current, { id: crypto.randomUUID(), text: answer.text }]);
                 setAnswer({ status: 'success', text });
                 setTokenUsage(usage ?? null);
-                setAnswerOpen(true);
+                openAnswerPanel();
                 setResponseTab('answers');
               }}
             />
